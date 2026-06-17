@@ -1,0 +1,16 @@
+﻿package IDEScrollPkg;
+
+{$DESCRIPTION 'IDEScroll - Delphi IDE form designer wheel scroll'}
+{$IMPLICITBUILD ON}
+{$DESIGNONLY}
+{$LIBSUFFIX AUTO}
+
+requires
+  rtl,
+  vcl;
+
+contains
+  IDEScroll.WheelHook in '..\exe\IDEScroll.WheelHook.pas',
+  IDEScroll.IdeHook in 'IDEScroll.IdeHook.pas';
+
+end.

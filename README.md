@@ -32,29 +32,47 @@
 
 > 백그라운드에서 계속 동작하도록 두려면 프로그램을 띄워둔 채로 후킹을 켜 두면 됩니다.
 
+## 두 가지 형태
+
+| 형태 | 설명 | 타깃 |
+|---|---|---|
+| **스탠드얼론 EXE** | 별도 실행 파일. 켜고 끄는 UI + 감도 설정 제공 | Win64 |
+| **IDE 패키지 (.bpl)** | IDE에 설치하면 자동으로 후킹. UI 없음 | Win32 (IDE가 32비트 프로세스) |
+
+> 패키지 버전의 감도는 `%APPDATA%\IDEScroll\IDEScroll.ini` 에서 조정합니다(첫 실행 시 기본값으로 생성).
+
+### 패키지 설치
+
+1. `build-bpl.cmd` 로 빌드 → `bin\IDEScrollPkg370.bpl` 생성 (Delphi 13.0 기준; 13.1 IDE에서 빌드하면 `...371.bpl`)
+2. IDE 메뉴 **Component → Install Packages → Add** 에서 해당 `.bpl` 선택
+3. 설치 후 IDE 디자이너에서 휠 / Ctrl+휠 사용 (별도 실행 불필요)
+
 ## 빌드
 
-- 요구: Delphi 13 (RAD Studio 37.0) 권장, 타깃 **Win64**
-- 명령줄 빌드:
+- 요구: Delphi 13 (RAD Studio 37.0) 권장
+- EXE (Win64): `build.cmd`
+- 패키지 (Win32): `build-bpl.cmd`
 
-  ```cmd
-  build.cmd
-  ```
-
-  `build.cmd` 안의 `STUDIO` 경로를 설치된 RAD Studio 버전에 맞게 수정하면 다른 버전으로도 빌드할 수 있습니다.
-
-- 또는 `src\IDEScroll.dpr` 를 IDE에서 열어 Win64 구성으로 빌드합니다.
+  각 스크립트의 `STUDIO` 경로를 설치된 RAD Studio 버전에 맞게 수정하면 다른 버전으로도 빌드할 수 있습니다.
+  또는 `src\exe\IDEScroll.dpr` / `src\bpl\IDEScrollPkg.dpk` 를 IDE에서 열어 빌드합니다.
 
 ## 프로젝트 구조
 
 ```
 src/
-  IDEScroll.dpr            진입점 (VCL 애플리케이션)
-  IDEScroll.WheelHook.pas  WH_MOUSE_LL 훅 + 휠 → 스크롤 변환 로직
-  Main.pas / Main.dfm      UI (후킹 토글 + 감도 설정)
-  IDEScroll.rc / .RES      리소스
-build.cmd                  Win64 빌드 스크립트
+  exe/                       스탠드얼론 실행 파일 (Win64)
+    IDEScroll.dpr            진입점 (VCL 애플리케이션)
+    IDEScroll.WheelHook.pas  WH_MOUSE_LL 훅 + 휠 → 스크롤 변환 로직
+    Main.pas / Main.dfm      UI (후킹 토글 + 감도 설정)
+    IDEScroll.rc / .RES      리소스
+  bpl/                       IDE 패키지 (Win32, Delphi 13)
+    IDEScrollPkg.dpk         design-time 패키지
+    IDEScroll.IdeHook.pas    로드 시 훅 자동 활성화
+build.cmd                    EXE 빌드 (Win64)
+build-bpl.cmd                패키지 빌드 (Win32)
 ```
+
+> EXE와 패키지는 동일한 `IDEScroll.WheelHook.pas` 훅 로직을 공유합니다.
 
 ## 호환성
 

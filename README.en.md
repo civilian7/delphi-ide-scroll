@@ -32,29 +32,47 @@ Grab `IDEScroll.exe` from [Releases](../../releases). It is a single executable 
 
 > To keep it active in the background, just leave the program running with hooking enabled.
 
+## Two flavors
+
+| Flavor | Description | Target |
+|---|---|---|
+| **Standalone EXE** | Separate executable with a toggle UI + sensitivity settings | Win64 |
+| **IDE package (.bpl)** | Install into the IDE; hooks automatically. No UI | Win32 (the IDE is a 32-bit process) |
+
+> The package flavor reads its sensitivity from `%APPDATA%\IDEScroll\IDEScroll.ini` (created with defaults on first run).
+
+### Installing the package
+
+1. Build with `build-bpl.cmd` → produces `bin\IDEScrollPkg370.bpl` (for Delphi 13.0; building in the 13.1 IDE yields `...371.bpl`)
+2. In the IDE, go to **Component → Install Packages → Add** and select the `.bpl`
+3. After installation, use the wheel / Ctrl+wheel in the form designer (no separate program needed)
+
 ## Build
 
-- Requires: Delphi 13 (RAD Studio 37.0) recommended, target **Win64**
-- Command-line build:
+- Requires: Delphi 13 (RAD Studio 37.0) recommended
+- EXE (Win64): `build.cmd`
+- Package (Win32): `build-bpl.cmd`
 
-  ```cmd
-  build.cmd
-  ```
-
-  Edit the `STUDIO` path inside `build.cmd` to match your installed RAD Studio version to build with other versions.
-
-- Or open `src\IDEScroll.dpr` in the IDE and build the Win64 configuration.
+  Edit the `STUDIO` path in each script to match your installed RAD Studio version to build with others.
+  Or open `src\exe\IDEScroll.dpr` / `src\bpl\IDEScrollPkg.dpk` in the IDE and build.
 
 ## Project layout
 
 ```
 src/
-  IDEScroll.dpr            Entry point (VCL application)
-  IDEScroll.WheelHook.pas  WH_MOUSE_LL hook + wheel → scroll translation
-  Main.pas / Main.dfm      UI (hook toggle + sensitivity settings)
-  IDEScroll.rc / .RES      Resources
-build.cmd                  Win64 build script
+  exe/                       Standalone executable (Win64)
+    IDEScroll.dpr            Entry point (VCL application)
+    IDEScroll.WheelHook.pas  WH_MOUSE_LL hook + wheel → scroll translation
+    Main.pas / Main.dfm      UI (hook toggle + sensitivity settings)
+    IDEScroll.rc / .RES      Resources
+  bpl/                       IDE package (Win32, Delphi 13)
+    IDEScrollPkg.dpk         design-time package
+    IDEScroll.IdeHook.pas    activates the hook on load
+build.cmd                    EXE build (Win64)
+build-bpl.cmd                Package build (Win32)
 ```
+
+> The EXE and the package share the same `IDEScroll.WheelHook.pas` hook logic.
 
 ## Compatibility
 
