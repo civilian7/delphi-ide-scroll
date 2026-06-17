@@ -47,6 +47,8 @@ Grab `IDEScroll.exe` from [Releases](../../releases). It is a single executable 
 2. In the IDE, go to **Component → Install Packages → Add** and select the `.bpl`
 3. After installation, use the wheel / Ctrl+wheel in the form designer (no separate program needed)
 
+See the [package build guide](docs/build-package.en.md) for detailed build/install steps.
+
 ## Build
 
 - Requires: Delphi 13 (RAD Studio 37.0) recommended
@@ -60,9 +62,10 @@ Grab `IDEScroll.exe` from [Releases](../../releases). It is a single executable 
 
 ```
 src/
+  common/                    Shared code
+    IDEScroll.WheelHook.pas  WH_MOUSE_LL hook + wheel → scroll translation (EXE/package)
   exe/                       Standalone executable (Win64)
     IDEScroll.dpr            Entry point (VCL application)
-    IDEScroll.WheelHook.pas  WH_MOUSE_LL hook + wheel → scroll translation
     Main.pas / Main.dfm      UI (hook toggle + sensitivity settings)
     IDEScroll.rc / .RES      Resources
   bpl/                       IDE package (Win32, Delphi 13)
@@ -72,7 +75,7 @@ build.cmd                    EXE build (Win64)
 build-bpl.cmd                Package build (Win32)
 ```
 
-> The EXE and the package share the same `IDEScroll.WheelHook.pas` hook logic.
+> The EXE and the package share `src/common/IDEScroll.WheelHook.pas` hook logic.
 
 ## Compatibility
 

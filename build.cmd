@@ -17,13 +17,18 @@ if not exist "%STUDIO%\bin\dcc64.exe" (
 if not exist "%~dp0bin" mkdir "%~dp0bin"
 if not exist "%~dp0dcu" mkdir "%~dp0dcu"
 
-"%STUDIO%\bin\brcc32.exe" "%~dp0src\exe\IDEScroll.rc"
+REM cd into the project folder so the "in '..\common\...'" path inside the .dpr resolves correctly.
+pushd "%~dp0src\exe"
+
+"%STUDIO%\bin\brcc32.exe" IDEScroll.rc
 
 "%STUDIO%\bin\dcc64.exe" --no-config -B ^
   -U"%STUDIO%\lib\Win64\release" ^
   -NS"System;Winapi;Vcl;Vcl.Samples;Data;Xml" ^
   -E"%~dp0bin" ^
   -N0"%~dp0dcu" ^
-  "%~dp0src\exe\IDEScroll.dpr"
+  IDEScroll.dpr
+
+popd
 
 endlocal

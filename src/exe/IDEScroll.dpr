@@ -3,7 +3,7 @@
 uses
   Vcl.Forms,
   Main in 'Main.pas' {frmMain},
-  IDEScroll.WheelHook in 'IDEScroll.WheelHook.pas';
+  IDEScroll.WheelHook in '..\common\IDEScroll.WheelHook.pas';
 
 {$R *.res}
 

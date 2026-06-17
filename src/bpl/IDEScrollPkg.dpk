@@ -10,7 +10,7 @@ requires
   vcl;
 
 contains
-  IDEScroll.WheelHook in '..\exe\IDEScroll.WheelHook.pas',
+  IDEScroll.WheelHook in '..\common\IDEScroll.WheelHook.pas',
   IDEScroll.IdeHook in 'IDEScroll.IdeHook.pas';
 
 end.

@@ -47,6 +47,8 @@
 2. IDE 메뉴 **Component → Install Packages → Add** 에서 해당 `.bpl` 선택
 3. 설치 후 IDE 디자이너에서 휠 / Ctrl+휠 사용 (별도 실행 불필요)
 
+자세한 빌드·설치 절차는 [패키지 빌드 가이드](docs/build-package.md) 를 참고하세요.
+
 ## 빌드
 
 - 요구: Delphi 13 (RAD Studio 37.0) 권장
@@ -60,9 +62,10 @@
 
 ```
 src/
+  common/                    공유 코드
+    IDEScroll.WheelHook.pas  WH_MOUSE_LL 훅 + 휠 → 스크롤 변환 로직 (EXE/패키지 공용)
   exe/                       스탠드얼론 실행 파일 (Win64)
     IDEScroll.dpr            진입점 (VCL 애플리케이션)
-    IDEScroll.WheelHook.pas  WH_MOUSE_LL 훅 + 휠 → 스크롤 변환 로직
     Main.pas / Main.dfm      UI (후킹 토글 + 감도 설정)
     IDEScroll.rc / .RES      리소스
   bpl/                       IDE 패키지 (Win32, Delphi 13)
@@ -72,7 +75,7 @@ build.cmd                    EXE 빌드 (Win64)
 build-bpl.cmd                패키지 빌드 (Win32)
 ```
 
-> EXE와 패키지는 동일한 `IDEScroll.WheelHook.pas` 훅 로직을 공유합니다.
+> EXE와 패키지는 `src/common/IDEScroll.WheelHook.pas` 훅 로직을 공유합니다.
 
 ## 호환성
 
