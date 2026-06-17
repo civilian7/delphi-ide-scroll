@@ -1,0 +1,22 @@
+# 빌드 산출물
+/bin/
+/dcu/
+*.dcu
+*.exe
+*.map
+*.drc
+*.identcache
+*.local
+*.tvsconfig
+
+# Delphi IDE
+__history/
+__recovery/
+*.~*
+*.dsk
+
+# 런타임 설정
+IDEScroll.ini
+
+# 배포 압축
+*.zip
