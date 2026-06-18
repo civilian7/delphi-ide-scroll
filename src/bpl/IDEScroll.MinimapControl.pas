@@ -42,6 +42,7 @@ type
     function  FormPosInContainer(out APos: TPoint): Boolean;
     procedure ApplyViewBoxScroll(const ABox: TRect);
     procedure ClampViewBox(var ABox: TRect);
+    procedure FillTranslucent(const ARect: TRect; const AColor: TColor; const AAlpha: Byte);
     procedure DrawCreditLink;
     procedure OpenCreditLink;
     procedure RecomputeLayout;
@@ -400,9 +401,12 @@ begin
   Canvas.Pen.Color := ThemedColor(clActiveBorder);
   Canvas.Rectangle(FCanvasRect);
 
-  // 현재 보이는 영역(드래그 가능). 드래그 중에는 점선 윤곽만.
+  // 현재 보이는 영역(드래그 가능). 반투명 바탕 + 테두리.
+  // 드래그 중에는 점선 윤곽으로 목표 위치를 표시.
+  Canvas.Brush.Style := bsClear;
   if FDragging then
   begin
+    FillTranslucent(FDragBox, ThemedColor(clHighlight), 60);
     Canvas.Pen.Color := ThemedColor(clHighlight);
     Canvas.Pen.Width := 1;
     Canvas.Pen.Style := psDot;
@@ -411,6 +415,7 @@ begin
   end
   else
   begin
+    FillTranslucent(FViewBox, ThemedColor(clHighlight), 60);
     Canvas.Pen.Color := ThemedColor(clHighlight);
     Canvas.Pen.Width := 2;
     Canvas.Rectangle(FViewBox);
@@ -457,6 +462,37 @@ end;
 procedure TIDEScrollMinimap.OpenCreditLink;
 begin
   ShellExecute(0, 'open', CREDIT_URL, nil, nil, SW_SHOWNORMAL);
+end;
+
+procedure TIDEScrollMinimap.FillTranslucent(const ARect: TRect; const AColor: TColor; const AAlpha: Byte);
+var
+  LBitmap: TBitmap;
+  LBlend: TBlendFunction;
+begin
+  if (ARect.Right - ARect.Left <= 0) or (ARect.Bottom - ARect.Top <= 0) then
+  begin
+    Exit;
+  end;
+
+  // 1x1 색 비트맵을 상수 알파로 늘려 칠해 반투명 효과를 낸다.
+  LBitmap := TBitmap.Create;
+  try
+    LBitmap.PixelFormat := pf24bit;
+    LBitmap.SetSize(1, 1);
+    LBitmap.Canvas.Brush.Color := ColorToRGB(AColor);
+    LBitmap.Canvas.FillRect(Rect(0, 0, 1, 1));
+
+    LBlend.BlendOp := AC_SRC_OVER;
+    LBlend.BlendFlags := 0;
+    LBlend.SourceConstantAlpha := AAlpha;
+    LBlend.AlphaFormat := 0;
+
+    Winapi.Windows.AlphaBlend(Canvas.Handle, ARect.Left, ARect.Top,
+      ARect.Right - ARect.Left, ARect.Bottom - ARect.Top,
+      LBitmap.Canvas.Handle, 0, 0, 1, 1, LBlend);
+  finally
+    LBitmap.Free;
+  end;
 end;
 
 procedure TIDEScrollMinimap.UpdateLinkHover(const AX: Integer; const AY: Integer);
