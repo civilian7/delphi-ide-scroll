@@ -1,11 +1,10 @@
 ﻿unit IDEScroll.MinimapControl;
 
 // 폼 디자이너 미니맵 컨트롤.
-//   - 미니맵 캔버스 = TFormContainerForm(컨테이너)의 클라이언트 전체.
-//   - 그 안에 디자인 중인 폼을 실제 위치/크기의 창(타이틀바 포함)으로 그린다.
-//     → 폼이 컨테이너의 어디에 있는지 한눈에 보인다.
-//   - 폼 창(박스)을 드래그/드롭하거나 마우스 휠을 굴리면 그 방향으로
-//     디자이너를 스크롤한다(폼 위치 이동). 드래그 중에는 점선 윤곽만 표시.
+//   - 미니맵 캔버스 = 디자이너의 전체 스크롤 영역(≈ 폼 전체).
+//   - 그 위에 폼 콘텐츠(캡처 이미지)를 깔아 폼 전체 모습을 보여준다.
+//   - 현재 보이는 영역(뷰포트)을 강조 박스로 표시한다. 이 박스를 드래그/드롭
+//     하거나 미니맵 위에서 마우스 휠을 굴리면 디자이너가 그만큼 스크롤된다.
 //   - 우하단에 "by DelMadang" 크레딧 링크(호버 + 클릭).
 // 색상은 IDE 테마를 따른다. 인라인 변수는 구형 Delphi 호환을 위해 사용하지 않는다.
 
@@ -32,20 +31,18 @@ type
     FDragGrab: TPoint;
     FDragging: Boolean;
     FFormBox: TRect;
-    FFormCaption: string;
     FFormHandle: HWND;
     FHasDesigner: Boolean;
-    FLastFormPos: TPoint;
+    FLastScroll: TPoint;
     FLinkHover: Boolean;
     FLinkRect: TRect;
     FScale: Double;
+    FViewBox: TRect;
     function  ContainerClientSize(out AWidth: Integer; out AHeight: Integer): Boolean;
     function  FormPosInContainer(out APos: TPoint): Boolean;
-    function  FormWindowRect(const AClientBox: TRect): TRect;
-    procedure ApplyDragScroll(const ABox: TRect);
-    procedure ClampFormBox(var ABox: TRect);
+    procedure ApplyViewBoxScroll(const ABox: TRect);
+    procedure ClampViewBox(var ABox: TRect);
     procedure DrawCreditLink;
-    procedure DrawFormWindow(const AClientBox: TRect);
     procedure OpenCreditLink;
     procedure RecomputeLayout;
     procedure ScrollContainerBy(const ADeltaX: Integer; const ADeltaY: Integer);
@@ -64,7 +61,7 @@ type
     // 디자인 폼을 다시 캡처한다(무거운 작업).
     procedure UpdateCapture;
 
-    // 폼 위치가 바뀌었으면 다시 그린다(가벼운 작업, 타이머에서 호출).
+    // 스크롤 위치가 바뀌었으면 다시 그린다(가벼운 작업, 타이머에서 호출).
     procedure RefreshViewport;
   end;
 
@@ -81,7 +78,6 @@ uses
 const
   MINIMAP_MARGIN = 6;
   CREDIT_MARGIN = 8;
-  TITLEBAR_H = 16;
   WHEEL_STEP_PX = 48;
   CREDIT_TEXT = 'by DelMadang';
   CREDIT_URL = 'https://cafe.naver.com/delmadang';
@@ -157,12 +153,6 @@ begin
   Result := True;
 end;
 
-function TIDEScrollMinimap.FormWindowRect(const AClientBox: TRect): TRect;
-begin
-  // 타이틀바를 포함한 폼 창 전체 영역(클라이언트 박스 위에 타이틀바).
-  Result := Rect(AClientBox.Left, AClientBox.Top - TITLEBAR_H, AClientBox.Right, AClientBox.Bottom);
-end;
-
 procedure TIDEScrollMinimap.RecomputeLayout;
 var
   LInner: TRect;
@@ -172,10 +162,23 @@ var
   LFormH: Integer;
   LContW: Integer;
   LContH: Integer;
+  LHPos: Integer;
+  LHPage: Integer;
+  LHMin: Integer;
+  LHMax: Integer;
+  LVPos: Integer;
+  LVPage: Integer;
+  LVMin: Integer;
+  LVMax: Integer;
+  LSurfaceW: Integer;
+  LSurfaceH: Integer;
+  LScrollX: Integer;
+  LScrollY: Integer;
   LFormPos: TPoint;
 begin
   FCanvasRect := TRect.Empty;
   FFormBox := TRect.Empty;
+  FViewBox := TRect.Empty;
   FScale := 0;
 
   LFormW := FBitmap.Width;
@@ -185,129 +188,141 @@ begin
     Exit;
   end;
 
-  // 캔버스 = 컨테이너 클라이언트 전체. 정보가 없으면 폼 크기로 대체.
   if not ContainerClientSize(LContW, LContH) then
   begin
     LContW := LFormW;
     LContH := LFormH;
   end;
 
+  // 컨테이너 스크롤 정보 → 전체 스크롤 영역(표면) 크기와 현재 스크롤 위치.
+  ReadScroll(FContainer, SB_HORZ, LHPos, LHPage, LHMin, LHMax);
+  ReadScroll(FContainer, SB_VERT, LVPos, LVPage, LVMin, LVMax);
+
+  if (LHPage > 0) and (LHMax - LHMin + 1 > LHPage) then
+  begin
+    LSurfaceW := LHMax - LHMin + 1;
+    LScrollX := LHPos - LHMin;
+  end
+  else
+  begin
+    LSurfaceW := LContW;
+    LScrollX := 0;
+  end;
+
+  if (LVPage > 0) and (LVMax - LVMin + 1 > LVPage) then
+  begin
+    LSurfaceH := LVMax - LVMin + 1;
+    LScrollY := LVPos - LVMin;
+  end
+  else
+  begin
+    LSurfaceH := LContH;
+    LScrollY := 0;
+  end;
+
+  FLastScroll := Point(LScrollX, LScrollY);
+
   if not FormPosInContainer(LFormPos) then
   begin
     LFormPos := Point(0, 0);
   end;
 
-  FLastFormPos := LFormPos;
-
-  // 캔버스를 미니맵 안에 비율 유지로 맞춘다. 타이틀바 공간을 위에 확보.
+  // 캔버스(표면)를 미니맵 안에 비율 유지로 맞춘다.
   LInner := ClientRect;
   LInner.Inflate(-MINIMAP_MARGIN, -MINIMAP_MARGIN);
   LInnerW := LInner.Right - LInner.Left;
-  LInnerH := (LInner.Bottom - LInner.Top) - TITLEBAR_H;
+  LInnerH := LInner.Bottom - LInner.Top;
   if (LInnerW <= 0) or (LInnerH <= 0) then
   begin
     Exit;
   end;
 
-  FScale := Min(LInnerW / LContW, LInnerH / LContH);
+  FScale := Min(LInnerW / LSurfaceW, LInnerH / LSurfaceH);
 
-  FCanvasRect.Left := LInner.Left + (LInnerW - Round(LContW * FScale)) div 2;
-  FCanvasRect.Top := LInner.Top + TITLEBAR_H + (LInnerH - Round(LContH * FScale)) div 2;
-  FCanvasRect.Right := FCanvasRect.Left + Round(LContW * FScale);
-  FCanvasRect.Bottom := FCanvasRect.Top + Round(LContH * FScale);
+  FCanvasRect.Left := LInner.Left + (LInnerW - Round(LSurfaceW * FScale)) div 2;
+  FCanvasRect.Top := LInner.Top + (LInnerH - Round(LSurfaceH * FScale)) div 2;
+  FCanvasRect.Right := FCanvasRect.Left + Round(LSurfaceW * FScale);
+  FCanvasRect.Bottom := FCanvasRect.Top + Round(LSurfaceH * FScale);
 
-  // 폼 박스 = 컨테이너 안의 실제 폼 위치/크기.
-  FFormBox.Left := FCanvasRect.Left + Round(LFormPos.X * FScale);
-  FFormBox.Top := FCanvasRect.Top + Round(LFormPos.Y * FScale);
+  // 폼 콘텐츠 = 표면 위 폼 위치(현재 스크롤 + 컨테이너 내 폼 위치).
+  FFormBox.Left := FCanvasRect.Left + Round((LScrollX + LFormPos.X) * FScale);
+  FFormBox.Top := FCanvasRect.Top + Round((LScrollY + LFormPos.Y) * FScale);
   FFormBox.Right := FFormBox.Left + Round(LFormW * FScale);
   FFormBox.Bottom := FFormBox.Top + Round(LFormH * FScale);
+
+  // 현재 보이는 영역(뷰포트) = 표면 위 [스크롤, 스크롤+페이지].
+  FViewBox.Left := FCanvasRect.Left + Round(LScrollX * FScale);
+  FViewBox.Top := FCanvasRect.Top + Round(LScrollY * FScale);
+  if LHPage > 0 then
+  begin
+    FViewBox.Right := FViewBox.Left + Round(LHPage * FScale);
+  end
+  else
+  begin
+    FViewBox.Right := FCanvasRect.Right;
+  end;
+
+  if LVPage > 0 then
+  begin
+    FViewBox.Bottom := FViewBox.Top + Round(LVPage * FScale);
+  end
+  else
+  begin
+    FViewBox.Bottom := FCanvasRect.Bottom;
+  end;
 end;
 
-procedure TIDEScrollMinimap.ClampFormBox(var ABox: TRect);
+procedure TIDEScrollMinimap.ClampViewBox(var ABox: TRect);
 var
-  LContW: Integer;
-  LContH: Integer;
-  LFormW: Integer;
-  LFormH: Integer;
   LBoxW: Integer;
   LBoxH: Integer;
-  LMinLeft: Integer;
-  LMaxLeft: Integer;
-  LMinTop: Integer;
-  LMaxTop: Integer;
 begin
-  if FScale <= 0 then
-  begin
-    Exit;
-  end;
+  LBoxW := ABox.Right - ABox.Left;
+  LBoxH := ABox.Bottom - ABox.Top;
 
-  if not ContainerClientSize(LContW, LContH) then
-  begin
-    Exit;
-  end;
-
-  LFormW := FBitmap.Width;
-  LFormH := FBitmap.Height;
-  LBoxW := Round(LFormW * FScale);
-  LBoxH := Round(LFormH * FScale);
-
-  // 폼은 컨테이너 클라이언트 범위 안에서만 위치할 수 있다(스크롤 한계).
-  // 가로: 폼이 컨테이너보다 좁으면 좌측 고정, 넓으면 [컨테이너폭-폼폭, 0] 범위.
-  if LFormW <= LContW then
-  begin
-    LMinLeft := FCanvasRect.Left;
-    LMaxLeft := FCanvasRect.Left;
-  end
-  else
-  begin
-    LMinLeft := FCanvasRect.Left + Round((LContW - LFormW) * FScale);
-    LMaxLeft := FCanvasRect.Left;
-  end;
-
-  if LFormH <= LContH then
-  begin
-    LMinTop := FCanvasRect.Top;
-    LMaxTop := FCanvasRect.Top;
-  end
-  else
-  begin
-    LMinTop := FCanvasRect.Top + Round((LContH - LFormH) * FScale);
-    LMaxTop := FCanvasRect.Top;
-  end;
-
-  ABox.Left := EnsureRange(ABox.Left, LMinLeft, LMaxLeft);
-  ABox.Top := EnsureRange(ABox.Top, LMinTop, LMaxTop);
+  ABox.Left := EnsureRange(ABox.Left, FCanvasRect.Left, FCanvasRect.Right - LBoxW);
+  ABox.Top := EnsureRange(ABox.Top, FCanvasRect.Top, FCanvasRect.Bottom - LBoxH);
   ABox.Right := ABox.Left + LBoxW;
   ABox.Bottom := ABox.Top + LBoxH;
 end;
 
-procedure TIDEScrollMinimap.ApplyDragScroll(const ABox: TRect);
+procedure TIDEScrollMinimap.ApplyViewBoxScroll(const ABox: TRect);
 var
-  LCurPos: TPoint;
-  LNewFormLeft: Integer;
-  LNewFormTop: Integer;
-  LDeltaX: Integer;
-  LDeltaY: Integer;
+  LTargetScrollX: Integer;
+  LTargetScrollY: Integer;
+  LHPos: Integer;
+  LHPage: Integer;
+  LHMin: Integer;
+  LHMax: Integer;
+  LVPos: Integer;
+  LVPage: Integer;
+  LVMin: Integer;
+  LVMax: Integer;
 begin
   if (FContainer = 0) or (FScale <= 0) then
   begin
     Exit;
   end;
 
-  if not FormPosInContainer(LCurPos) then
+  // 박스의 표면 위치(픽셀) = 목표 스크롤 위치.
+  LTargetScrollX := Round((ABox.Left - FCanvasRect.Left) / FScale);
+  LTargetScrollY := Round((ABox.Top - FCanvasRect.Top) / FScale);
+
+  ReadScroll(FContainer, SB_HORZ, LHPos, LHPage, LHMin, LHMax);
+  if (LHPage > 0) and (LHMax - LHMin + 1 > LHPage) then
   begin
-    Exit;
+    LTargetScrollX := EnsureRange(LTargetScrollX + LHMin, LHMin, Max(LHMin, LHMax - LHPage + 1));
+    ScrollWindowTo(FContainer, SB_HORZ, LTargetScrollX, True);
   end;
 
-  // 드롭 박스가 가리키는 폼의 새 컨테이너 위치(클라이언트 픽셀).
-  LNewFormLeft := Round((ABox.Left - FCanvasRect.Left) / FScale);
-  LNewFormTop := Round((ABox.Top - FCanvasRect.Top) / FScale);
+  ReadScroll(FContainer, SB_VERT, LVPos, LVPage, LVMin, LVMax);
+  if (LVPage > 0) and (LVMax - LVMin + 1 > LVPage) then
+  begin
+    LTargetScrollY := EnsureRange(LTargetScrollY + LVMin, LVMin, Max(LVMin, LVMax - LVPage + 1));
+    ScrollWindowTo(FContainer, SB_VERT, LTargetScrollY, True);
+  end;
 
-  // 폼이 그 위치로 가려면 스크롤을 (현재위치 - 새위치)만큼 이동해야 한다.
-  LDeltaX := LCurPos.X - LNewFormLeft;
-  LDeltaY := LCurPos.Y - LNewFormTop;
-
-  ScrollContainerBy(LDeltaX, LDeltaY);
+  Invalidate;
 end;
 
 procedure TIDEScrollMinimap.ScrollContainerBy(const ADeltaX: Integer; const ADeltaY: Integer);
@@ -340,87 +355,18 @@ begin
   Invalidate;
 end;
 
-procedure TIDEScrollMinimap.DrawFormWindow(const AClientBox: TRect);
-var
-  LTitle: TRect;
-  LButtonSize: Integer;
-  LButtonTop: Integer;
-  LRight: Integer;
-  LButton: TRect;
-  LIndex: Integer;
-  LTextRect: TRect;
-  LOldHeight: Integer;
-begin
-  // 클라이언트(캡처 이미지).
-  Canvas.StretchDraw(AClientBox, FBitmap);
-
-  LTitle := Rect(AClientBox.Left, AClientBox.Top - TITLEBAR_H, AClientBox.Right, AClientBox.Top);
-
-  // 캡션바 배경.
-  Canvas.Pen.Style := psSolid;
-  Canvas.Brush.Style := bsSolid;
-  Canvas.Brush.Color := ThemedColor(clActiveCaption);
-  Canvas.FillRect(LTitle);
-
-  // 우측 창 버튼 3개.
-  LButtonSize := TITLEBAR_H - 9;
-  if LButtonSize < 4 then
-  begin
-    LButtonSize := 4;
-  end;
-
-  LButtonTop := LTitle.Top + (TITLEBAR_H - LButtonSize) div 2;
-  LRight := LTitle.Right - 4;
-  Canvas.Brush.Style := bsClear;
-  Canvas.Pen.Color := ThemedColor(clCaptionText);
-  Canvas.Pen.Width := 1;
-  for LIndex := 0 to 2 do
-  begin
-    LButton := Rect(LRight - LButtonSize, LButtonTop, LRight, LButtonTop + LButtonSize);
-    if LButton.Left <= LTitle.Left + 2 then
-    begin
-      Break;
-    end;
-
-    Canvas.Rectangle(LButton);
-    LRight := LButton.Left - 3;
-  end;
-
-  // 폼의 실제 캡션 텍스트(버튼 영역 제외, 말줄임).
-  LOldHeight := Canvas.Font.Height;
-  Canvas.Font.Height := -(TITLEBAR_H - 5);
-  Canvas.Font.Style := [];
-  Canvas.Font.Color := ThemedColor(clCaptionText);
-  Canvas.Brush.Style := bsClear;
-  LTextRect := Rect(LTitle.Left + 4, LTitle.Top, LRight - 2, LTitle.Bottom);
-  if (LTextRect.Right > LTextRect.Left) and (FFormCaption <> '') then
-  begin
-    DrawText(Canvas.Handle, PChar(FFormCaption), Length(FFormCaption), LTextRect,
-      DT_SINGLELINE or DT_VCENTER or DT_END_ELLIPSIS or DT_NOPREFIX);
-  end;
-
-  Canvas.Font.Height := LOldHeight;
-
-  // 창 외곽선(타이틀바 + 클라이언트).
-  Canvas.Brush.Style := bsClear;
-  Canvas.Pen.Color := ThemedColor(clActiveBorder);
-  Canvas.Pen.Width := 1;
-  Canvas.Rectangle(LTitle.Left, LTitle.Top, AClientBox.Right, AClientBox.Bottom);
-end;
-
 procedure TIDEScrollMinimap.Paint;
 var
   LText: string;
-  LWindow: TRect;
 begin
-  // 미니맵 바탕(컨테이너 밖 영역).
+  // 미니맵 바탕(표면 밖).
   Canvas.Brush.Style := bsSolid;
   Canvas.Brush.Color := ThemedColor(clBtnShadow);
   Canvas.FillRect(ClientRect);
 
   RecomputeLayout;
 
-  if (not FHasDesigner) or FFormBox.IsEmpty then
+  if (not FHasDesigner) or FCanvasRect.IsEmpty then
   begin
     LText := '디자이너 없음';
     Canvas.Brush.Style := bsClear;
@@ -434,31 +380,37 @@ begin
     Exit;
   end;
 
-  // 캔버스 = 컨테이너(디자이너 표면) 영역.
+  // 표면(전체 스크롤 영역) 바탕.
   Canvas.Brush.Style := bsSolid;
   Canvas.Brush.Color := ThemedColor(clBtnFace);
   Canvas.FillRect(FCanvasRect);
+
+  // 폼 콘텐츠.
+  Canvas.StretchDraw(FFormBox, FBitmap);
   Canvas.Brush.Style := bsClear;
   Canvas.Pen.Style := psSolid;
   Canvas.Pen.Width := 1;
+  Canvas.Pen.Color := ThemedColor(clGrayText);
+  Canvas.Rectangle(FFormBox);
+
+  // 표면 경계.
   Canvas.Pen.Color := ThemedColor(clActiveBorder);
   Canvas.Rectangle(FCanvasRect);
 
+  // 현재 보이는 영역(드래그 가능). 드래그 중에는 점선 윤곽만.
   if FDragging then
   begin
-    // 드래그 중에는 폼 창의 점선 윤곽만 표시(실제 이동은 드롭 시).
-    LWindow := FormWindowRect(FDragBox);
-    Canvas.Brush.Style := bsClear;
     Canvas.Pen.Color := ThemedColor(clHighlight);
     Canvas.Pen.Width := 1;
     Canvas.Pen.Style := psDot;
-    Canvas.Rectangle(LWindow);
+    Canvas.Rectangle(FDragBox);
     Canvas.Pen.Style := psSolid;
   end
   else
   begin
-    // 컨테이너 안의 실제 위치/크기로 폼을 그린다(넘치면 경계에서 잘림).
-    DrawFormWindow(FFormBox);
+    Canvas.Pen.Color := ThemedColor(clHighlight);
+    Canvas.Pen.Width := 2;
+    Canvas.Rectangle(FViewBox);
   end;
 
   // 우하단 크레딧 링크는 항상 마지막에 그린다.
@@ -572,14 +524,12 @@ begin
     FHasDesigner := False;
     FContainer := 0;
     FFormHandle := 0;
-    FFormCaption := '';
     Invalidate;
     Exit;
   end;
 
   FFormHandle := LForm.Handle;
   FContainer := FindScrollContainer(FFormHandle);
-  FFormCaption := GetWindowCaption(FFormHandle);
 
   if not CaptureWindowImage(FFormHandle, FBitmap) then
   begin
@@ -596,27 +546,32 @@ end;
 
 procedure TIDEScrollMinimap.RefreshViewport;
 var
-  LPos: TPoint;
+  LPos: Integer;
+  LPage: Integer;
+  LMin: Integer;
+  LMax: Integer;
+  LScrollX: Integer;
+  LScrollY: Integer;
 begin
   if FDragging or (not FHasDesigner) or (FContainer = 0) then
   begin
     Exit;
   end;
 
-  // 외부 스크롤로 폼 위치가 바뀌었으면 다시 그린다.
-  if FormPosInContainer(LPos) then
+  // 외부 스크롤로 위치가 바뀌었으면 다시 그린다.
+  ReadScroll(FContainer, SB_HORZ, LPos, LPage, LMin, LMax);
+  LScrollX := LPos - LMin;
+  ReadScroll(FContainer, SB_VERT, LPos, LPage, LMin, LMax);
+  LScrollY := LPos - LMin;
+
+  if (LScrollX <> FLastScroll.X) or (LScrollY <> FLastScroll.Y) then
   begin
-    if (LPos.X <> FLastFormPos.X) or (LPos.Y <> FLastFormPos.Y) then
-    begin
-      FLastFormPos := LPos;
-      Invalidate;
-    end;
+    FLastScroll := Point(LScrollX, LScrollY);
+    Invalidate;
   end;
 end;
 
 procedure TIDEScrollMinimap.MouseDown(AButton: TMouseButton; AShift: TShiftState; AX: Integer; AY: Integer);
-var
-  LWindow: TRect;
 begin
   inherited MouseDown(AButton, AShift, AX, AY);
 
@@ -627,32 +582,34 @@ begin
     Exit;
   end;
 
-  if (AButton = mbLeft) and FHasDesigner and (not FFormBox.IsEmpty) then
+  if (AButton = mbLeft) and FHasDesigner and (not FViewBox.IsEmpty) then
   begin
-    LWindow := FormWindowRect(FFormBox);
-    if LWindow.Contains(Point(AX, AY)) then
+    FDragging := True;
+    FDragBox := FViewBox;
+
+    // 박스 밖을 누르면 그 지점을 박스 중심으로 옮긴 뒤 드래그 시작.
+    if not FViewBox.Contains(Point(AX, AY)) then
     begin
-      FDragging := True;
-      FDragGrab := Point(AX - FFormBox.Left, AY - FFormBox.Top);
-      FDragBox := FFormBox;
-      Cursor := crSizeAll;
-      Invalidate;
+      FDragBox.Offset(
+        AX - (FViewBox.Left + FViewBox.Right) div 2,
+        AY - (FViewBox.Top + FViewBox.Bottom) div 2);
+      ClampViewBox(FDragBox);
     end;
+
+    FDragGrab := Point(AX - FDragBox.Left, AY - FDragBox.Top);
+    Cursor := crSizeAll;
+    Invalidate;
   end;
 end;
 
 procedure TIDEScrollMinimap.MouseMove(AShift: TShiftState; AX: Integer; AY: Integer);
-var
-  LWindow: TRect;
 begin
   inherited MouseMove(AShift, AX, AY);
 
   if FDragging then
   begin
-    // 커서를 따라 폼 박스를 이동(스크롤 범위로 보정)시킨 점선 윤곽만 갱신.
-    FDragBox.Left := AX - FDragGrab.X;
-    FDragBox.Top := AY - FDragGrab.Y;
-    ClampFormBox(FDragBox);
+    FDragBox.Offset((AX - FDragGrab.X) - FDragBox.Left, (AY - FDragGrab.Y) - FDragBox.Top);
+    ClampViewBox(FDragBox);
     Invalidate;
     Exit;
   end;
@@ -660,14 +617,13 @@ begin
   // 크레딧 링크 호버 효과 갱신.
   UpdateLinkHover(AX, AY);
 
-  // 폼 창 위에서는 이동 커서로 드래그 가능함을 안내한다.
-  LWindow := FormWindowRect(FFormBox);
+  // 뷰포트 박스 위에서는 이동 커서로 안내한다.
   if FLinkRect.Contains(Point(AX, AY)) then
   begin
     Cursor := crHandPoint;
   end
   else
-  if FHasDesigner and (not FFormBox.IsEmpty) and LWindow.Contains(Point(AX, AY)) then
+  if FHasDesigner and (not FViewBox.IsEmpty) and FViewBox.Contains(Point(AX, AY)) then
   begin
     Cursor := crSizeAll;
   end
@@ -686,8 +642,7 @@ begin
     if FDragging then
     begin
       FDragging := False;
-      // 드롭 위치로 실제 스크롤.
-      ApplyDragScroll(FDragBox);
+      ApplyViewBoxScroll(FDragBox);
     end;
 
     if FLinkRect.Contains(Point(AX, AY)) then
