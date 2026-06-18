@@ -7,10 +7,16 @@
 
 requires
   rtl,
-  vcl;
+  vcl,
+  designide;
 
 contains
   IDEScroll.WheelHook in '..\common\IDEScroll.WheelHook.pas',
+  IDEScroll.DesignerIntrospect in 'IDEScroll.DesignerIntrospect.pas',
+  IDEScroll.MinimapControl in 'IDEScroll.MinimapControl.pas',
+  IDEScroll.DesignNotifier in 'IDEScroll.DesignNotifier.pas',
+  IDEScroll.DockFrame in 'IDEScroll.DockFrame.pas' {IDEScrollFrame: TFrame},
+  IDEScroll.DockForm in 'IDEScroll.DockForm.pas',
   IDEScroll.IdeHook in 'IDEScroll.IdeHook.pas';
 
 end.

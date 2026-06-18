@@ -80,7 +80,16 @@
         </DelphiCompile>
         <DCCReference Include="rtl.dcp"/>
         <DCCReference Include="vcl.dcp"/>
+        <DCCReference Include="designide.dcp"/>
         <DCCReference Include="..\common\IDEScroll.WheelHook.pas"/>
+        <DCCReference Include="IDEScroll.DesignerIntrospect.pas"/>
+        <DCCReference Include="IDEScroll.MinimapControl.pas"/>
+        <DCCReference Include="IDEScroll.DesignNotifier.pas"/>
+        <DCCReference Include="IDEScroll.DockFrame.pas">
+            <Form>IDEScrollFrame</Form>
+            <FormType>dfm</FormType>
+        </DCCReference>
+        <DCCReference Include="IDEScroll.DockForm.pas"/>
         <DCCReference Include="IDEScroll.IdeHook.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
