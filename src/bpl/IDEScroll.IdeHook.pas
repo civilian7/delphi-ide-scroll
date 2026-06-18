@@ -1,4 +1,4 @@
-unit IDEScroll.IdeHook;
+﻿unit IDEScroll.IdeHook;
 
 // 디자인 타임 패키지 진입점.
 //   - 기존: 로드 시 공용 TWheelHook 을 활성화하고 ini 에서 민감도를 읽는다.
@@ -36,7 +36,9 @@ const
 
 type
   // 메뉴/도킹 폼 등 IDE 통합 요소의 수명을 관리한다.
-  TIDEScrollIntegration = class
+  // TComponent 를 상속해 도킹 폼이 외부에서 해제되면 FreeNotification 으로
+  // FForm 을 자동으로 nil 처리한다(이중 해제/댕글링 방지).
+  TIDEScrollIntegration = class(TComponent)
   private
     FDockableForm: INTACustomDockableForm;
     FForm: TCustomForm;
@@ -44,8 +46,10 @@ type
     function  FindParentMenu: TMenuItem;
     procedure MenuClick(ASender: TObject);
     procedure ShowDockForm;
+  protected
+    procedure Notification(AComponent: TComponent; AOperation: TOperation); override;
   public
-    constructor Create;
+    constructor Create; reintroduce;
     destructor Destroy; override;
   end;
 
@@ -91,7 +95,7 @@ constructor TIDEScrollIntegration.Create;
 var
   LParent: TMenuItem;
 begin
-  inherited Create;
+  inherited Create(nil);
 
   LParent := FindParentMenu;
   if LParent <> nil then
@@ -116,11 +120,28 @@ begin
     FreeAndNil(FMenuItem);
   end;
 
-  // 도킹 폼은 IDE 가 소유하므로 직접 Free 하지 않고 참조만 끊는다.
-  FForm := nil;
+  // 패키지 언로드/언인스톨 시 도킹 폼(프레임)을 반드시 직접 해제해야 한다.
+  // 그렇지 않으면 IDE 가 언로드된 BPL 의 프레임 소멸자/등록 통지자를 나중에
+  // 호출하다가 크래시한다. 폼을 해제하면 프레임 소멸자가 통지자를 해제한다.
+  if FForm <> nil then
+  begin
+    FreeAndNil(FForm);
+  end;
+
   FDockableForm := nil;
 
   inherited Destroy;
+end;
+
+procedure TIDEScrollIntegration.Notification(AComponent: TComponent; AOperation: TOperation);
+begin
+  inherited Notification(AComponent, AOperation);
+
+  // 도킹 폼이 외부에서 해제되면 댕글링 포인터를 남기지 않는다.
+  if (AOperation = opRemove) and (AComponent = FForm) then
+  begin
+    FForm := nil;
+  end;
 end;
 
 function TIDEScrollIntegration.FindParentMenu: TMenuItem;
@@ -179,6 +200,11 @@ begin
   if FForm = nil then
   begin
     FForm := LServices.CreateDockableForm(FDockableForm);
+    if FForm <> nil then
+    begin
+      // 폼이 외부에서 해제되면 Notification 으로 FForm 을 nil 처리하도록 등록.
+      FForm.FreeNotification(Self);
+    end;
   end;
 
   if FForm <> nil then

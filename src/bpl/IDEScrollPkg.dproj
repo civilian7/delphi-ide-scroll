@@ -82,6 +82,7 @@
         <DCCReference Include="vcl.dcp"/>
         <DCCReference Include="designide.dcp"/>
         <DCCReference Include="..\common\IDEScroll.WheelHook.pas"/>
+        <DCCReference Include="IDEScroll.Theming.pas"/>
         <DCCReference Include="IDEScroll.DesignerIntrospect.pas"/>
         <DCCReference Include="IDEScroll.MinimapControl.pas"/>
         <DCCReference Include="IDEScroll.DesignNotifier.pas"/>

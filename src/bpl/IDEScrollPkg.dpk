@@ -12,6 +12,7 @@ requires
 
 contains
   IDEScroll.WheelHook in '..\common\IDEScroll.WheelHook.pas',
+  IDEScroll.Theming in 'IDEScroll.Theming.pas',
   IDEScroll.DesignerIntrospect in 'IDEScroll.DesignerIntrospect.pas',
   IDEScroll.MinimapControl in 'IDEScroll.MinimapControl.pas',
   IDEScroll.DesignNotifier in 'IDEScroll.DesignNotifier.pas',

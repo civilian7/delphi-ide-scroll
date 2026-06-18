@@ -38,7 +38,9 @@ type
     FVPos: Integer;
     function  ComputeDrawRect: TRect;
     function  ViewportRect(const ADrawRect: TRect): TRect;
-    procedure ScrollToPoint(const AX: Integer; const AY: Integer);
+    procedure DrawViewportWindow(const ARect: TRect);
+    procedure SyncScrollFromContainer;
+    procedure ScrollToPoint(const AX: Integer; const AY: Integer; const AFinal: Boolean);
   protected
     procedure MouseDown(AButton: TMouseButton; AShift: TShiftState; AX: Integer; AY: Integer); override;
     procedure MouseMove(AShift: TShiftState; AX: Integer; AY: Integer); override;
@@ -59,11 +61,12 @@ implementation
 
 {$REGION 'uses'}
 uses
-  IDEScroll.DesignerIntrospect;
+  IDEScroll.DesignerIntrospect,
+  IDEScroll.Theming;
 {$ENDREGION}
 
 const
-  MINIMAP_MARGIN = 6;
+  MINIMAP_MARGIN = 2;
 
 constructor TIDEScrollMinimap.Create(AOwner: TComponent);
 begin
@@ -73,6 +76,10 @@ begin
   FContainer := 0;
   FDragging := False;
   FHasDesigner := False;
+
+  // 더블 버퍼링으로 드래그 시 깜빡임/끊김을 줄인다.
+  DoubleBuffered := True;
+  ControlStyle := ControlStyle + [csOpaque];
 end;
 
 destructor TIDEScrollMinimap.Destroy;
@@ -191,14 +198,14 @@ var
   LViewRect: TRect;
   LText: string;
 begin
-  Canvas.Brush.Color := clBtnFace;
+  Canvas.Brush.Color := ThemedColor(clBtnFace);
   Canvas.FillRect(ClientRect);
 
   if (not FHasDesigner) or (FBitmap.Width <= 0) or (FBitmap.Height <= 0) then
   begin
     LText := '디자이너 없음';
     Canvas.Brush.Style := bsClear;
-    Canvas.Font.Color := clGrayText;
+    Canvas.Font.Color := ThemedColor(clGrayText);
     Canvas.TextOut(
       (ClientWidth - Canvas.TextWidth(LText)) div 2,
       (ClientHeight - Canvas.TextHeight(LText)) div 2,
@@ -218,15 +225,92 @@ begin
 
   // 디자인 폼 전체 외곽선.
   Canvas.Brush.Style := bsClear;
-  Canvas.Pen.Color := clGray;
+  Canvas.Pen.Color := ThemedColor(clGrayText);
   Canvas.Pen.Width := 1;
   Canvas.Rectangle(LDrawRect);
 
-  // 현재 보이는 영역 뷰포트.
+  // 현재 보이는 영역을 캡션바 있는 창 모양으로 표시한다.
   LViewRect := ViewportRect(LDrawRect);
-  Canvas.Pen.Color := clHighlight;
+  DrawViewportWindow(LViewRect);
+end;
+
+procedure TIDEScrollMinimap.DrawViewportWindow(const ARect: TRect);
+var
+  LCaptionH: Integer;
+  LCaptionRect: TRect;
+  LButtonSize: Integer;
+  LRight: Integer;
+  LButton: TRect;
+  LIndex: Integer;
+begin
+  // 너무 작으면 단순 강조 사각형으로 대체한다.
+  if (ARect.Right - ARect.Left < 8) or (ARect.Bottom - ARect.Top < 8) then
+  begin
+    Canvas.Brush.Style := bsClear;
+    Canvas.Pen.Color := ThemedColor(clHighlight);
+    Canvas.Pen.Width := 2;
+    Canvas.Rectangle(ARect);
+    Canvas.Brush.Style := bsSolid;
+    Exit;
+  end;
+
+  // 창 본문 외곽선(내용이 비치도록 채우지 않음).
+  Canvas.Brush.Style := bsClear;
+  Canvas.Pen.Color := ThemedColor(clHighlight);
   Canvas.Pen.Width := 2;
-  Canvas.Rectangle(LViewRect);
+  Canvas.Rectangle(ARect);
+
+  // 캡션바 높이는 뷰포트 높이에 비례하되 적당히 제한한다.
+  LCaptionH := (ARect.Bottom - ARect.Top) div 6;
+  if LCaptionH < 7 then
+  begin
+    LCaptionH := 7;
+  end;
+
+  if LCaptionH > 16 then
+  begin
+    LCaptionH := 16;
+  end;
+
+  if LCaptionH > (ARect.Bottom - ARect.Top) - 3 then
+  begin
+    LCaptionH := (ARect.Bottom - ARect.Top) - 3;
+  end;
+
+  LCaptionRect := Rect(ARect.Left + 1, ARect.Top + 1, ARect.Right - 1, ARect.Top + 1 + LCaptionH);
+
+  // 캡션바 채우기.
+  Canvas.Brush.Style := bsSolid;
+  Canvas.Brush.Color := ThemedColor(clHighlight);
+  Canvas.FillRect(LCaptionRect);
+
+  // 캡션 우측에 작은 창 버튼 3개를 흉내 낸다.
+  LButtonSize := LCaptionH - 4;
+  if LButtonSize >= 3 then
+  begin
+    LRight := LCaptionRect.Right - 3;
+    Canvas.Brush.Color := ThemedColor(clBtnFace);
+    Canvas.Pen.Color := ThemedColor(clBtnShadow);
+    Canvas.Pen.Width := 1;
+    for LIndex := 0 to 2 do
+    begin
+      LButton := Rect(LRight - LButtonSize, LCaptionRect.Top + 2, LRight, LCaptionRect.Top + 2 + LButtonSize);
+      if LButton.Left <= LCaptionRect.Left + 2 then
+      begin
+        Break;
+      end;
+
+      Canvas.Rectangle(LButton);
+      LRight := LButton.Left - 2;
+    end;
+  end;
+
+  // 캡션과 본문 경계선.
+  Canvas.Pen.Color := ThemedColor(clHighlight);
+  Canvas.Pen.Width := 1;
+  Canvas.MoveTo(ARect.Left + 1, LCaptionRect.Bottom);
+  Canvas.LineTo(ARect.Right - 1, LCaptionRect.Bottom);
+
   Canvas.Brush.Style := bsSolid;
 end;
 
@@ -300,7 +384,19 @@ begin
   Invalidate;
 end;
 
-procedure TIDEScrollMinimap.ScrollToPoint(const AX: Integer; const AY: Integer);
+procedure TIDEScrollMinimap.SyncScrollFromContainer;
+begin
+  // 실제 컨테이너 스크롤 위치를 다시 읽어 뷰포트 표시를 동기화한다.
+  if FContainer = 0 then
+  begin
+    Exit;
+  end;
+
+  ReadScroll(FContainer, SB_HORZ, FHPos, FHPage, FHMin, FHMax);
+  ReadScroll(FContainer, SB_VERT, FVPos, FVPage, FVMin, FVMax);
+end;
+
+procedure TIDEScrollMinimap.ScrollToPoint(const AX: Integer; const AY: Integer; const AFinal: Boolean);
 var
   LDrawW: Integer;
   LDrawH: Integer;
@@ -347,8 +443,7 @@ begin
     end;
 
     LNewHPos := FHMin + Round(LLeftFrac * LHRange);
-    ScrollWindowTo(FContainer, SB_HORZ, LNewHPos);
-    FHPos := LNewHPos;
+    ScrollWindowTo(FContainer, SB_HORZ, LNewHPos, AFinal);
   end;
 
   LVRange := FVMax - FVMin + 1;
@@ -367,10 +462,11 @@ begin
     end;
 
     LNewVPos := FVMin + Round(LTopFrac * LVRange);
-    ScrollWindowTo(FContainer, SB_VERT, LNewVPos);
-    FVPos := LNewVPos;
+    ScrollWindowTo(FContainer, SB_VERT, LNewVPos, AFinal);
   end;
 
+  // 컨테이너가 실제로 이동한 위치를 다시 읽어 표시가 튀지 않게 한다.
+  SyncScrollFromContainer;
   Invalidate;
 end;
 
@@ -381,7 +477,9 @@ begin
   if (AButton = mbLeft) and FHasDesigner and (not FDrawRect.IsEmpty) then
   begin
     FDragging := True;
-    ScrollToPoint(AX, AY);
+    // 드래그 중에는 이동(grab) 커서로 바꾼다.
+    Cursor := crSizeAll;
+    ScrollToPoint(AX, AY, False);
   end;
 end;
 
@@ -391,7 +489,18 @@ begin
 
   if FDragging then
   begin
-    ScrollToPoint(AX, AY);
+    ScrollToPoint(AX, AY, False);
+    Exit;
+  end;
+
+  // 드래그 가능 영역 위에서는 손 모양 커서로 안내한다.
+  if FHasDesigner and (not FDrawRect.IsEmpty) and FDrawRect.Contains(Point(AX, AY)) then
+  begin
+    Cursor := crHandPoint;
+  end
+  else
+  begin
+    Cursor := crDefault;
   end;
 end;
 
@@ -401,7 +510,23 @@ begin
 
   if AButton = mbLeft then
   begin
+    if FDragging then
+    begin
+      // 드래그 종료를 컨테이너에 확정 통지한다.
+      ScrollToPoint(AX, AY, True);
+    end;
+
     FDragging := False;
+
+    // 커서를 현재 위치에 맞게 되돌린다.
+    if FHasDesigner and (not FDrawRect.IsEmpty) and FDrawRect.Contains(Point(AX, AY)) then
+    begin
+      Cursor := crHandPoint;
+    end
+    else
+    begin
+      Cursor := crDefault;
+    end;
   end;
 end;
 

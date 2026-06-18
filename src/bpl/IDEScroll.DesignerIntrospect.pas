@@ -33,7 +33,8 @@ function CaptureWindowImage(const AWnd: HWND; const ABitmap: TBitmap): Boolean;
 procedure ReadScroll(const AWnd: HWND; const ABar: Integer; out APos: Integer; out APage: Integer; out AMin: Integer; out AMax: Integer);
 
 // AWnd 의 ABar 스크롤을 APos 절대 위치로 이동시킨다.
-procedure ScrollWindowTo(const AWnd: HWND; const ABar: Integer; const APos: Integer);
+// AFinal=False 면 드래그 중 연속 스크롤(SB_THUMBTRACK), True 면 확정(SB_THUMBPOSITION + 종료).
+procedure ScrollWindowTo(const AWnd: HWND; const ABar: Integer; const APos: Integer; const AFinal: Boolean);
 
 implementation
 
@@ -170,7 +171,7 @@ begin
   end;
 end;
 
-procedure ScrollWindowTo(const AWnd: HWND; const ABar: Integer; const APos: Integer);
+procedure ScrollWindowTo(const AWnd: HWND; const ABar: Integer; const APos: Integer; const AFinal: Boolean);
 var
   LMessage: UINT;
   LPos: Integer;
@@ -196,8 +197,17 @@ begin
     LPos := $FFFF;
   end;
 
-  SendMessage(AWnd, LMessage, MakeWParam(SB_THUMBPOSITION, LPos), 0);
-  SendMessage(AWnd, LMessage, MakeWParam(SB_ENDSCROLL, 0), 0);
+  if AFinal then
+  begin
+    // 드래그 종료: 위치 확정 후 스크롤 종료를 알린다.
+    SendMessage(AWnd, LMessage, MakeWParam(SB_THUMBPOSITION, LPos), 0);
+    SendMessage(AWnd, LMessage, MakeWParam(SB_ENDSCROLL, 0), 0);
+  end
+  else
+  begin
+    // 드래그 중: 연속 추적으로 부드럽게 스크롤한다.
+    SendMessage(AWnd, LMessage, MakeWParam(SB_THUMBTRACK, LPos), 0);
+  end;
 end;
 
 end.

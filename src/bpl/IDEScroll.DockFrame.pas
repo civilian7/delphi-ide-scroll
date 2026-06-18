@@ -14,9 +14,11 @@ uses
   Vcl.Controls,
   Vcl.Forms,
   Vcl.ExtCtrls,
+  ToolsAPI,
   DesignIntf,
   IDEScroll.MinimapControl,
-  IDEScroll.DesignNotifier;
+  IDEScroll.DesignNotifier,
+  IDEScroll.Theming;
 {$ENDREGION}
 
 type
@@ -26,9 +28,12 @@ type
     FCaptureTimer: TTimer;
     FMinimap: TIDEScrollMinimap;
     FNotifier: IDesignNotification;
+    FThemeIndex: Integer;
+    FThemeNotifier: INTAIDEThemingServicesNotifier;
     FViewTimer: TTimer;
     procedure CaptureTimerTick(ASender: TObject);
     procedure HandleDesignChange;
+    procedure HandleThemeChange;
     procedure ScheduleCapture;
     procedure ViewTimerTick(ASender: TObject);
   public
@@ -72,12 +77,23 @@ begin
   FNotifier := TIDEScrollDesignNotifier.Create(HandleDesignChange);
   RegisterDesignNotification(FNotifier);
 
+  // 현재 IDE 테마를 적용하고, 테마 변경 시 다시 칠하도록 통지자를 등록한다.
+  ApplyThemeTo(Self);
+  FThemeNotifier := TIDEScrollThemeNotifier.Create(HandleThemeChange);
+  FThemeIndex := RegisterThemeNotifier(FThemeNotifier);
+
   // 폼이 열린 시점에 이미 디자이너가 떠 있을 수 있으니 초기 캡처를 예약한다.
   ScheduleCapture;
 end;
 
 destructor TIDEScrollFrame.Destroy;
 begin
+  if FThemeNotifier <> nil then
+  begin
+    UnregisterThemeNotifier(FThemeIndex);
+    FThemeNotifier := nil;
+  end;
+
   if FNotifier <> nil then
   begin
     UnregisterDesignNotification(FNotifier);
@@ -97,6 +113,12 @@ end;
 procedure TIDEScrollFrame.HandleDesignChange;
 begin
   ScheduleCapture;
+end;
+
+procedure TIDEScrollFrame.HandleThemeChange;
+begin
+  ApplyThemeTo(Self);
+  FMinimap.Invalidate;
 end;
 
 procedure TIDEScrollFrame.CaptureTimerTick(ASender: TObject);
