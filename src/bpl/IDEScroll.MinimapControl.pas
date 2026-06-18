@@ -380,9 +380,9 @@ begin
     Exit;
   end;
 
-  // 표면(전체 스크롤 영역) 바탕.
+  // 표면(전체 스크롤 영역 = 폼 영역) 바탕. 미니맵 배경과 다른 색으로 대비.
   Canvas.Brush.Style := bsSolid;
-  Canvas.Brush.Color := ThemedColor(clBtnFace);
+  Canvas.Brush.Color := ThemedColor(clWindow);
   Canvas.FillRect(FCanvasRect);
 
   // 폼 콘텐츠.
