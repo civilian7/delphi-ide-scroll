@@ -81,6 +81,9 @@ const
   WHEEL_STEP_PX = 48;
   CREDIT_TEXT = 'by DelMadang';
   CREDIT_URL = 'https://cafe.naver.com/delmadang';
+  // 채도를 낮춘 노랑(머스터드) 계열. TColor 는 $00BBGGRR.
+  CREDIT_COLOR = TColor($006EAFBE);
+  CREDIT_HOVER_COLOR = TColor($0082D2E1);
 
 constructor TIDEScrollMinimap.Create(AOwner: TComponent);
 begin
@@ -422,16 +425,16 @@ var
   LWidth: Integer;
   LHeight: Integer;
 begin
-  // 호버 시 강조색 + 굵게, 평소엔 링크색 + 밑줄.
+  // 호버 시 약간 밝게 + 굵게, 평소엔 채도 낮춘 노랑 + 밑줄.
   if FLinkHover then
   begin
     Canvas.Font.Style := [fsUnderline, fsBold];
-    Canvas.Font.Color := ThemedColor(clHighlight);
+    Canvas.Font.Color := CREDIT_HOVER_COLOR;
   end
   else
   begin
     Canvas.Font.Style := [fsUnderline];
-    Canvas.Font.Color := ThemedColor(clHotLight);
+    Canvas.Font.Color := CREDIT_COLOR;
   end;
 
   Canvas.Font.Height := 0;
@@ -489,7 +492,7 @@ begin
     Exit;
   end;
 
-  // 휠 위로 = 위/왼쪽으로 스크롤. Shift 와 함께면 가로.
+  // 휠 위로 = 위/왼쪽으로 스크롤. Ctrl 와 함께면 가로(메인 훅과 동일).
   LStep := -(AWheelDelta div WHEEL_DELTA) * WHEEL_STEP_PX;
   if LStep = 0 then
   begin
@@ -503,7 +506,7 @@ begin
     end;
   end;
 
-  if ssShift in AShift then
+  if ssCtrl in AShift then
   begin
     ScrollContainerBy(LStep, 0);
   end
