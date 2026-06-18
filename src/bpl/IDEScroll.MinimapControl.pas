@@ -32,13 +32,16 @@ type
     FHMin: Integer;
     FHPage: Integer;
     FHPos: Integer;
+    FLinkRect: TRect;
     FVMax: Integer;
     FVMin: Integer;
     FVPage: Integer;
     FVPos: Integer;
     function  ComputeDrawRect: TRect;
     function  ViewportRect(const ADrawRect: TRect): TRect;
+    procedure DrawCreditLink;
     procedure DrawViewportWindow(const ARect: TRect);
+    procedure OpenCreditLink;
     procedure SyncScrollFromContainer;
     procedure ScrollToPoint(const AX: Integer; const AY: Integer; const AFinal: Boolean);
   protected
@@ -61,12 +64,15 @@ implementation
 
 {$REGION 'uses'}
 uses
+  Winapi.ShellAPI,
   IDEScroll.DesignerIntrospect,
   IDEScroll.Theming;
 {$ENDREGION}
 
 const
   MINIMAP_MARGIN = 2;
+  CREDIT_TEXT = 'by DelMadang';
+  CREDIT_URL = 'https://cafe.naver.com/delmadang';
 
 constructor TIDEScrollMinimap.Create(AOwner: TComponent);
 begin
@@ -203,6 +209,7 @@ begin
 
   if (not FHasDesigner) or (FBitmap.Width <= 0) or (FBitmap.Height <= 0) then
   begin
+    FDrawRect := TRect.Empty;
     LText := '디자이너 없음';
     Canvas.Brush.Style := bsClear;
     Canvas.Font.Color := ThemedColor(clGrayText);
@@ -211,27 +218,57 @@ begin
       (ClientHeight - Canvas.TextHeight(LText)) div 2,
       LText);
     Canvas.Brush.Style := bsSolid;
-    Exit;
-  end;
-
-  LDrawRect := ComputeDrawRect;
-  if LDrawRect.IsEmpty then
+  end
+  else
   begin
-    Exit;
+    LDrawRect := ComputeDrawRect;
+    FDrawRect := LDrawRect;
+    if not LDrawRect.IsEmpty then
+    begin
+      Canvas.StretchDraw(LDrawRect, FBitmap);
+
+      // 디자인 폼 전체 외곽선.
+      Canvas.Brush.Style := bsClear;
+      Canvas.Pen.Color := ThemedColor(clGrayText);
+      Canvas.Pen.Width := 1;
+      Canvas.Rectangle(LDrawRect);
+
+      // 현재 보이는 영역을 캡션바 있는 창 모양으로 표시한다.
+      LViewRect := ViewportRect(LDrawRect);
+      DrawViewportWindow(LViewRect);
+    end;
   end;
 
-  FDrawRect := LDrawRect;
-  Canvas.StretchDraw(LDrawRect, FBitmap);
+  // 우하단 크레딧 링크는 항상 마지막에 그린다.
+  DrawCreditLink;
+end;
 
-  // 디자인 폼 전체 외곽선.
+procedure TIDEScrollMinimap.DrawCreditLink;
+var
+  LWidth: Integer;
+  LHeight: Integer;
+begin
+  Canvas.Font.Style := [fsUnderline];
+  Canvas.Font.Color := ThemedColor(clHotLight);
   Canvas.Brush.Style := bsClear;
-  Canvas.Pen.Color := ThemedColor(clGrayText);
-  Canvas.Pen.Width := 1;
-  Canvas.Rectangle(LDrawRect);
 
-  // 현재 보이는 영역을 캡션바 있는 창 모양으로 표시한다.
-  LViewRect := ViewportRect(LDrawRect);
-  DrawViewportWindow(LViewRect);
+  LWidth := Canvas.TextWidth(CREDIT_TEXT);
+  LHeight := Canvas.TextHeight(CREDIT_TEXT);
+
+  FLinkRect.Right := ClientWidth - MINIMAP_MARGIN - 1;
+  FLinkRect.Bottom := ClientHeight - MINIMAP_MARGIN - 1;
+  FLinkRect.Left := FLinkRect.Right - LWidth;
+  FLinkRect.Top := FLinkRect.Bottom - LHeight;
+
+  Canvas.TextOut(FLinkRect.Left, FLinkRect.Top, CREDIT_TEXT);
+
+  Canvas.Font.Style := [];
+  Canvas.Brush.Style := bsSolid;
+end;
+
+procedure TIDEScrollMinimap.OpenCreditLink;
+begin
+  ShellExecute(0, 'open', CREDIT_URL, nil, nil, SW_SHOWNORMAL);
 end;
 
 procedure TIDEScrollMinimap.DrawViewportWindow(const ARect: TRect);
@@ -474,6 +511,13 @@ procedure TIDEScrollMinimap.MouseDown(AButton: TMouseButton; AShift: TShiftState
 begin
   inherited MouseDown(AButton, AShift, AX, AY);
 
+  // 크레딧 링크 클릭은 드래그보다 우선한다.
+  if (AButton = mbLeft) and FLinkRect.Contains(Point(AX, AY)) then
+  begin
+    OpenCreditLink;
+    Exit;
+  end;
+
   if (AButton = mbLeft) and FHasDesigner and (not FDrawRect.IsEmpty) then
   begin
     FDragging := True;
@@ -493,8 +537,9 @@ begin
     Exit;
   end;
 
-  // 드래그 가능 영역 위에서는 손 모양 커서로 안내한다.
-  if FHasDesigner and (not FDrawRect.IsEmpty) and FDrawRect.Contains(Point(AX, AY)) then
+  // 크레딧 링크나 드래그 가능 영역 위에서는 손 모양 커서로 안내한다.
+  if FLinkRect.Contains(Point(AX, AY)) or
+     (FHasDesigner and (not FDrawRect.IsEmpty) and FDrawRect.Contains(Point(AX, AY))) then
   begin
     Cursor := crHandPoint;
   end
@@ -519,7 +564,8 @@ begin
     FDragging := False;
 
     // 커서를 현재 위치에 맞게 되돌린다.
-    if FHasDesigner and (not FDrawRect.IsEmpty) and FDrawRect.Contains(Point(AX, AY)) then
+    if FLinkRect.Contains(Point(AX, AY)) or
+       (FHasDesigner and (not FDrawRect.IsEmpty) and FDrawRect.Contains(Point(AX, AY))) then
     begin
       Cursor := crHandPoint;
     end
