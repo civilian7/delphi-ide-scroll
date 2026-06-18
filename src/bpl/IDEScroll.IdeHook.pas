@@ -256,6 +256,13 @@ begin
 
   if FForm <> nil then
   begin
+    // IDE 데스크톱은 폼 Name 으로 도킹 레이아웃을 저장/복원한다.
+    // 식별자와 같은 이름이어야 마지막 도킹 위치가 그대로 복원된다.
+    if FForm.Name = '' then
+    begin
+      FForm.Name := IDESCROLL_FORM_IDENT;
+    end;
+
     // 폼이 외부에서 해제되면 Notification 으로 FForm 을 nil 처리하도록 등록.
     FForm.FreeNotification(Self);
     FForm.Show;
