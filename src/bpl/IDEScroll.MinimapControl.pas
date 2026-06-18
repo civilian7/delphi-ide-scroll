@@ -13,6 +13,7 @@ interface
 {$REGION 'uses'}
 uses
   Winapi.Windows,
+  Winapi.Messages,
   System.Classes,
   System.Types,
   Vcl.Controls,
@@ -28,11 +29,13 @@ type
     FDragging: Boolean;
     FDragViewRect: TRect;
     FDrawRect: TRect;
+    FFormCaption: string;
     FHasDesigner: Boolean;
     FHMax: Integer;
     FHMin: Integer;
     FHPage: Integer;
     FHPos: Integer;
+    FLinkHover: Boolean;
     FLinkRect: TRect;
     FVMax: Integer;
     FVMin: Integer;
@@ -42,11 +45,13 @@ type
     function  DragTargetRect(const AX: Integer; const AY: Integer): TRect;
     function  ViewportRect(const ADrawRect: TRect): TRect;
     procedure DrawCreditLink;
-    procedure DrawViewportWindow(const ARect: TRect);
+    procedure DrawWindowTitleBar(const AClientRect: TRect);
     procedure OpenCreditLink;
     procedure SyncScrollFromContainer;
     procedure ScrollToPoint(const AX: Integer; const AY: Integer; const AFinal: Boolean);
+    procedure UpdateLinkHover(const AX: Integer; const AY: Integer);
   protected
+    procedure CMMouseLeave(var AMessage: TMessage); message CM_MOUSELEAVE;
     procedure MouseDown(AButton: TMouseButton; AShift: TShiftState; AX: Integer; AY: Integer); override;
     procedure MouseMove(AShift: TShiftState; AX: Integer; AY: Integer); override;
     procedure MouseUp(AButton: TMouseButton; AShift: TShiftState; AX: Integer; AY: Integer); override;
@@ -74,6 +79,7 @@ uses
 const
   MINIMAP_MARGIN = 2;
   CREDIT_MARGIN = 8;
+  TITLEBAR_H = 16;
   CREDIT_TEXT = 'by DelMadang';
   CREDIT_URL = 'https://cafe.naver.com/delmadang';
 
@@ -116,7 +122,8 @@ begin
 
   LClient := ClientRect;
   LAvailW := (LClient.Right - LClient.Left) - MINIMAP_MARGIN * 2;
-  LAvailH := (LClient.Bottom - LClient.Top) - MINIMAP_MARGIN * 2;
+  // 타이틀바 높이만큼 세로 공간을 미리 확보한다.
+  LAvailH := (LClient.Bottom - LClient.Top) - MINIMAP_MARGIN * 2 - TITLEBAR_H;
   if (LAvailW <= 0) or (LAvailH <= 0) then
   begin
     Exit;
@@ -143,8 +150,9 @@ begin
   LDrawW := Round(FBitmap.Width * LScale);
   LDrawH := Round(FBitmap.Height * LScale);
 
+  // 타이틀바(위) + 클라이언트(아래) 전체를 가운데 정렬한다. Result 는 클라이언트 영역.
   Result.Left := LClient.Left + (LClient.Right - LClient.Left - LDrawW) div 2;
-  Result.Top := LClient.Top + (LClient.Bottom - LClient.Top - LDrawH) div 2;
+  Result.Top := LClient.Top + (LClient.Bottom - LClient.Top - (LDrawH + TITLEBAR_H)) div 2 + TITLEBAR_H;
   Result.Right := Result.Left + LDrawW;
   Result.Bottom := Result.Top + LDrawH;
 end;
@@ -306,13 +314,10 @@ begin
     FDrawRect := LDrawRect;
     if not LDrawRect.IsEmpty then
     begin
+      // 캡처한 클라이언트 이미지를 그리고, 그 위에 실제 폼 캡션으로 타이틀바를 입혀
+      // 실제 창처럼 보이게 한다.
       Canvas.StretchDraw(LDrawRect, FBitmap);
-
-      // 디자인 폼 전체 외곽선.
-      Canvas.Brush.Style := bsClear;
-      Canvas.Pen.Color := ThemedColor(clGrayText);
-      Canvas.Pen.Width := 1;
-      Canvas.Rectangle(LDrawRect);
+      DrawWindowTitleBar(LDrawRect);
 
       if FDragging then
       begin
@@ -326,9 +331,13 @@ begin
       end
       else
       begin
-        // 현재 보이는 영역을 캡션바 있는 창 모양으로 표시한다.
+        // 현재 보이는 영역을 강조 사각형으로 표시한다.
         LViewRect := ViewportRect(LDrawRect);
-        DrawViewportWindow(LViewRect);
+        Canvas.Brush.Style := bsClear;
+        Canvas.Pen.Color := ThemedColor(clHighlight);
+        Canvas.Pen.Width := 2;
+        Canvas.Pen.Style := psSolid;
+        Canvas.Rectangle(LViewRect);
       end;
     end;
   end;
@@ -342,8 +351,18 @@ var
   LWidth: Integer;
   LHeight: Integer;
 begin
-  Canvas.Font.Style := [fsUnderline];
-  Canvas.Font.Color := ThemedColor(clHotLight);
+  // 호버 시 강조색 + 굵게, 평소엔 링크색 + 밑줄.
+  if FLinkHover then
+  begin
+    Canvas.Font.Style := [fsUnderline, fsBold];
+    Canvas.Font.Color := ThemedColor(clHighlight);
+  end
+  else
+  begin
+    Canvas.Font.Style := [fsUnderline];
+    Canvas.Font.Color := ThemedColor(clHotLight);
+  end;
+
   Canvas.Brush.Style := bsClear;
 
   LWidth := Canvas.TextWidth(CREDIT_TEXT);
@@ -365,84 +384,92 @@ begin
   ShellExecute(0, 'open', CREDIT_URL, nil, nil, SW_SHOWNORMAL);
 end;
 
-procedure TIDEScrollMinimap.DrawViewportWindow(const ARect: TRect);
+procedure TIDEScrollMinimap.UpdateLinkHover(const AX: Integer; const AY: Integer);
 var
-  LCaptionH: Integer;
-  LCaptionRect: TRect;
+  LHover: Boolean;
+begin
+  LHover := FLinkRect.Contains(Point(AX, AY));
+  if LHover <> FLinkHover then
+  begin
+    FLinkHover := LHover;
+    Invalidate;
+  end;
+end;
+
+procedure TIDEScrollMinimap.CMMouseLeave(var AMessage: TMessage);
+begin
+  inherited;
+
+  if FLinkHover then
+  begin
+    FLinkHover := False;
+    Invalidate;
+  end;
+end;
+
+procedure TIDEScrollMinimap.DrawWindowTitleBar(const AClientRect: TRect);
+var
+  LTitle: TRect;
   LButtonSize: Integer;
+  LButtonTop: Integer;
   LRight: Integer;
   LButton: TRect;
   LIndex: Integer;
+  LTextRect: TRect;
+  LOldHeight: Integer;
 begin
-  // 너무 작으면 단순 강조 사각형으로 대체한다.
-  if (ARect.Right - ARect.Left < 8) or (ARect.Bottom - ARect.Top < 8) then
+  LTitle := Rect(AClientRect.Left, AClientRect.Top - TITLEBAR_H, AClientRect.Right, AClientRect.Top);
+
+  // 캡션바 배경.
+  Canvas.Pen.Style := psSolid;
+  Canvas.Brush.Style := bsSolid;
+  Canvas.Brush.Color := ThemedColor(clActiveCaption);
+  Canvas.FillRect(LTitle);
+
+  // 우측 창 버튼 3개.
+  LButtonSize := TITLEBAR_H - 9;
+  if LButtonSize < 4 then
   begin
-    Canvas.Brush.Style := bsClear;
-    Canvas.Pen.Color := ThemedColor(clHighlight);
-    Canvas.Pen.Width := 2;
-    Canvas.Rectangle(ARect);
-    Canvas.Brush.Style := bsSolid;
-    Exit;
+    LButtonSize := 4;
   end;
 
-  // 창 본문 외곽선(내용이 비치도록 채우지 않음).
+  LButtonTop := LTitle.Top + (TITLEBAR_H - LButtonSize) div 2;
+  LRight := LTitle.Right - 4;
   Canvas.Brush.Style := bsClear;
-  Canvas.Pen.Color := ThemedColor(clHighlight);
-  Canvas.Pen.Width := 2;
-  Canvas.Rectangle(ARect);
-
-  // 캡션바 높이는 뷰포트 높이에 비례하되 적당히 제한한다.
-  LCaptionH := (ARect.Bottom - ARect.Top) div 6;
-  if LCaptionH < 7 then
-  begin
-    LCaptionH := 7;
-  end;
-
-  if LCaptionH > 16 then
-  begin
-    LCaptionH := 16;
-  end;
-
-  if LCaptionH > (ARect.Bottom - ARect.Top) - 3 then
-  begin
-    LCaptionH := (ARect.Bottom - ARect.Top) - 3;
-  end;
-
-  LCaptionRect := Rect(ARect.Left + 1, ARect.Top + 1, ARect.Right - 1, ARect.Top + 1 + LCaptionH);
-
-  // 캡션바 채우기.
-  Canvas.Brush.Style := bsSolid;
-  Canvas.Brush.Color := ThemedColor(clHighlight);
-  Canvas.FillRect(LCaptionRect);
-
-  // 캡션 우측에 작은 창 버튼 3개를 흉내 낸다.
-  LButtonSize := LCaptionH - 4;
-  if LButtonSize >= 3 then
-  begin
-    LRight := LCaptionRect.Right - 3;
-    Canvas.Brush.Color := ThemedColor(clBtnFace);
-    Canvas.Pen.Color := ThemedColor(clBtnShadow);
-    Canvas.Pen.Width := 1;
-    for LIndex := 0 to 2 do
-    begin
-      LButton := Rect(LRight - LButtonSize, LCaptionRect.Top + 2, LRight, LCaptionRect.Top + 2 + LButtonSize);
-      if LButton.Left <= LCaptionRect.Left + 2 then
-      begin
-        Break;
-      end;
-
-      Canvas.Rectangle(LButton);
-      LRight := LButton.Left - 2;
-    end;
-  end;
-
-  // 캡션과 본문 경계선.
-  Canvas.Pen.Color := ThemedColor(clHighlight);
+  Canvas.Pen.Color := ThemedColor(clCaptionText);
   Canvas.Pen.Width := 1;
-  Canvas.MoveTo(ARect.Left + 1, LCaptionRect.Bottom);
-  Canvas.LineTo(ARect.Right - 1, LCaptionRect.Bottom);
+  for LIndex := 0 to 2 do
+  begin
+    LButton := Rect(LRight - LButtonSize, LButtonTop, LRight, LButtonTop + LButtonSize);
+    if LButton.Left <= LTitle.Left + 2 then
+    begin
+      Break;
+    end;
 
-  Canvas.Brush.Style := bsSolid;
+    Canvas.Rectangle(LButton);
+    LRight := LButton.Left - 3;
+  end;
+
+  // 폼의 실제 캡션 텍스트(버튼 영역 제외, 말줄임).
+  LOldHeight := Canvas.Font.Height;
+  Canvas.Font.Height := -(TITLEBAR_H - 5);
+  Canvas.Font.Style := [];
+  Canvas.Font.Color := ThemedColor(clCaptionText);
+  Canvas.Brush.Style := bsClear;
+  LTextRect := Rect(LTitle.Left + 4, LTitle.Top, LRight - 2, LTitle.Bottom);
+  if (LTextRect.Right > LTextRect.Left) and (FFormCaption <> '') then
+  begin
+    DrawText(Canvas.Handle, PChar(FFormCaption), Length(FFormCaption), LTextRect,
+      DT_SINGLELINE or DT_VCENTER or DT_END_ELLIPSIS or DT_NOPREFIX);
+  end;
+
+  Canvas.Font.Height := LOldHeight;
+
+  // 타이틀바 + 클라이언트를 감싸는 창 외곽선.
+  Canvas.Brush.Style := bsClear;
+  Canvas.Pen.Color := ThemedColor(clActiveBorder);
+  Canvas.Pen.Width := 1;
+  Canvas.Rectangle(LTitle.Left, LTitle.Top, AClientRect.Right, AClientRect.Bottom);
 end;
 
 procedure TIDEScrollMinimap.UpdateCapture;
@@ -453,11 +480,13 @@ begin
   begin
     FHasDesigner := False;
     FContainer := 0;
+    FFormCaption := '';
     Invalidate;
     Exit;
   end;
 
   FContainer := FindScrollContainer(LForm.Handle);
+  FFormCaption := GetWindowCaption(LForm.Handle);
 
   if not CaptureWindowImage(LForm.Handle, FBitmap) then
   begin
@@ -634,6 +663,9 @@ begin
     Invalidate;
     Exit;
   end;
+
+  // 크레딧 링크 호버 효과 갱신.
+  UpdateLinkHover(AX, AY);
 
   // 크레딧 링크나 드래그 가능 영역 위에서는 손 모양 커서로 안내한다.
   if FLinkRect.Contains(Point(AX, AY)) or

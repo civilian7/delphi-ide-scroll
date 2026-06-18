@@ -26,8 +26,11 @@ function TryGetDesignedForm(out AForm: TWinControl): Boolean;
 // AChild 의 부모 사슬을 거슬러 올라가 TFormContainerForm 컨테이너를 찾는다.
 function FindScrollContainer(const AChild: HWND): HWND;
 
-// AWnd 창 전체(스크롤로 가려진 영역 포함)를 ABitmap 으로 캡처한다.
+// AWnd 의 클라이언트 영역(스크롤로 가려진 부분 포함)을 ABitmap 으로 캡처한다.
 function CaptureWindowImage(const AWnd: HWND; const ABitmap: TBitmap): Boolean;
+
+// AWnd 의 창 텍스트(폼 캡션)를 돌려준다.
+function GetWindowCaption(const AWnd: HWND): string;
 
 // AWnd 의 ABar(SB_HORZ/SB_VERT) 스크롤 정보를 읽는다.
 procedure ReadScroll(const AWnd: HWND; const ABar: Integer; out APos: Integer; out APage: Integer; out AMin: Integer; out AMax: Integer);
@@ -45,7 +48,8 @@ uses
 
 const
   DESIGNER_CONTAINER_CLASS = 'TFormContainerForm';
-  // PrintWindow 가 가려진 영역까지 전체 렌더하도록 하는 플래그(Winapi 에 미선언 가능성 대비).
+  // 클라이언트 영역만 캡처(PW_CLIENTONLY) + 가려진 부분까지 전체 렌더(PW_RENDERFULLCONTENT).
+  PW_CLIENTONLY_FLAG = $00000001;
   PW_RENDERFULLCONTENT_FLAG = $00000002;
 
 // 일부 RTL 버전에 Winapi.Windows 로 노출되지 않아 직접 임포트한다.
@@ -130,7 +134,8 @@ begin
     Exit;
   end;
 
-  if not GetWindowRect(AWnd, LRect) then
+  // 클라이언트 영역 크기로 캡처한다(타이틀바는 미니맵에서 별도로 그린다).
+  if not GetClientRect(AWnd, LRect) then
   begin
     Exit;
   end;
@@ -145,8 +150,26 @@ begin
   ABitmap.PixelFormat := pf24bit;
   ABitmap.SetSize(LWidth, LHeight);
 
-  // PW_RENDERFULLCONTENT 로 디자이너에 가려진 부분까지 그린다.
-  Result := PrintWindow(AWnd, ABitmap.Canvas.Handle, PW_RENDERFULLCONTENT_FLAG);
+  // 클라이언트만, 가려진 부분까지 전체 렌더한다.
+  Result := PrintWindow(AWnd, ABitmap.Canvas.Handle, PW_CLIENTONLY_FLAG or PW_RENDERFULLCONTENT_FLAG);
+end;
+
+function GetWindowCaption(const AWnd: HWND): string;
+var
+  LLength: Integer;
+  LBuffer: array[0..511] of Char;
+begin
+  Result := '';
+  if (AWnd = 0) or not IsWindow(AWnd) then
+  begin
+    Exit;
+  end;
+
+  LLength := GetWindowText(AWnd, LBuffer, Length(LBuffer));
+  if LLength > 0 then
+  begin
+    SetString(Result, LBuffer, LLength);
+  end;
 end;
 
 procedure ReadScroll(const AWnd: HWND; const ABar: Integer; out APos: Integer; out APage: Integer; out AMin: Integer; out AMax: Integer);
