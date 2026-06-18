@@ -26,6 +26,7 @@ type
     FBitmap: TBitmap;
     FContainer: HWND;
     FDragging: Boolean;
+    FDragViewRect: TRect;
     FDrawRect: TRect;
     FHasDesigner: Boolean;
     FHMax: Integer;
@@ -38,6 +39,7 @@ type
     FVPage: Integer;
     FVPos: Integer;
     function  ComputeDrawRect: TRect;
+    function  DragTargetRect(const AX: Integer; const AY: Integer): TRect;
     function  ViewportRect(const ADrawRect: TRect): TRect;
     procedure DrawCreditLink;
     procedure DrawViewportWindow(const ARect: TRect);
@@ -71,6 +73,7 @@ uses
 
 const
   MINIMAP_MARGIN = 2;
+  CREDIT_MARGIN = 8;
   CREDIT_TEXT = 'by DelMadang';
   CREDIT_URL = 'https://cafe.naver.com/delmadang';
 
@@ -198,6 +201,84 @@ begin
   Result.Bottom := Result.Top + Round(LHeightFrac * LDrawH);
 end;
 
+function TIDEScrollMinimap.DragTargetRect(const AX: Integer; const AY: Integer): TRect;
+var
+  LDrawW: Integer;
+  LDrawH: Integer;
+  LCenterFracX: Double;
+  LCenterFracY: Double;
+  LHRange: Integer;
+  LVRange: Integer;
+  LWidthFrac: Double;
+  LHeightFrac: Double;
+  LLeftFrac: Double;
+  LTopFrac: Double;
+begin
+  Result := TRect.Empty;
+  if FDrawRect.IsEmpty then
+  begin
+    Exit;
+  end;
+
+  LDrawW := FDrawRect.Right - FDrawRect.Left;
+  LDrawH := FDrawRect.Bottom - FDrawRect.Top;
+  if (LDrawW <= 0) or (LDrawH <= 0) then
+  begin
+    Exit;
+  end;
+
+  // 커서를 뷰포트 중심으로 두는 위치를 계산한다.
+  LCenterFracX := (AX - FDrawRect.Left) / LDrawW;
+  LCenterFracY := (AY - FDrawRect.Top) / LDrawH;
+
+  LHRange := FHMax - FHMin + 1;
+  if (LHRange > 0) and (FHPage > 0) and (FHPage < LHRange) then
+  begin
+    LWidthFrac := FHPage / LHRange;
+  end
+  else
+  begin
+    LWidthFrac := 1;
+  end;
+
+  LLeftFrac := LCenterFracX - LWidthFrac / 2;
+  if LLeftFrac < 0 then
+  begin
+    LLeftFrac := 0;
+  end;
+
+  if LLeftFrac > 1 - LWidthFrac then
+  begin
+    LLeftFrac := 1 - LWidthFrac;
+  end;
+
+  LVRange := FVMax - FVMin + 1;
+  if (LVRange > 0) and (FVPage > 0) and (FVPage < LVRange) then
+  begin
+    LHeightFrac := FVPage / LVRange;
+  end
+  else
+  begin
+    LHeightFrac := 1;
+  end;
+
+  LTopFrac := LCenterFracY - LHeightFrac / 2;
+  if LTopFrac < 0 then
+  begin
+    LTopFrac := 0;
+  end;
+
+  if LTopFrac > 1 - LHeightFrac then
+  begin
+    LTopFrac := 1 - LHeightFrac;
+  end;
+
+  Result.Left := FDrawRect.Left + Round(LLeftFrac * LDrawW);
+  Result.Top := FDrawRect.Top + Round(LTopFrac * LDrawH);
+  Result.Right := Result.Left + Round(LWidthFrac * LDrawW);
+  Result.Bottom := Result.Top + Round(LHeightFrac * LDrawH);
+end;
+
 procedure TIDEScrollMinimap.Paint;
 var
   LDrawRect: TRect;
@@ -233,9 +314,22 @@ begin
       Canvas.Pen.Width := 1;
       Canvas.Rectangle(LDrawRect);
 
-      // 현재 보이는 영역을 캡션바 있는 창 모양으로 표시한다.
-      LViewRect := ViewportRect(LDrawRect);
-      DrawViewportWindow(LViewRect);
+      if FDragging then
+      begin
+        // 드래그 중에는 이동 목표를 점선 사각형으로만 표시(실제 스크롤은 드롭 시).
+        Canvas.Brush.Style := bsClear;
+        Canvas.Pen.Color := ThemedColor(clHighlight);
+        Canvas.Pen.Width := 1;
+        Canvas.Pen.Style := psDot;
+        Canvas.Rectangle(FDragViewRect);
+        Canvas.Pen.Style := psSolid;
+      end
+      else
+      begin
+        // 현재 보이는 영역을 캡션바 있는 창 모양으로 표시한다.
+        LViewRect := ViewportRect(LDrawRect);
+        DrawViewportWindow(LViewRect);
+      end;
     end;
   end;
 
@@ -255,8 +349,8 @@ begin
   LWidth := Canvas.TextWidth(CREDIT_TEXT);
   LHeight := Canvas.TextHeight(CREDIT_TEXT);
 
-  FLinkRect.Right := ClientWidth - MINIMAP_MARGIN - 1;
-  FLinkRect.Bottom := ClientHeight - MINIMAP_MARGIN - 1;
+  FLinkRect.Right := ClientWidth - CREDIT_MARGIN;
+  FLinkRect.Bottom := ClientHeight - CREDIT_MARGIN;
   FLinkRect.Left := FLinkRect.Right - LWidth;
   FLinkRect.Top := FLinkRect.Bottom - LHeight;
 
@@ -523,7 +617,9 @@ begin
     FDragging := True;
     // 드래그 중에는 이동(grab) 커서로 바꾼다.
     Cursor := crSizeAll;
-    ScrollToPoint(AX, AY, False);
+    // 실제 스크롤은 하지 않고 목표 위치를 점선으로만 표시한다.
+    FDragViewRect := DragTargetRect(AX, AY);
+    Invalidate;
   end;
 end;
 
@@ -533,7 +629,9 @@ begin
 
   if FDragging then
   begin
-    ScrollToPoint(AX, AY, False);
+    // 점선 목표 사각형만 갱신(실제 스크롤은 드롭 시).
+    FDragViewRect := DragTargetRect(AX, AY);
+    Invalidate;
     Exit;
   end;
 
@@ -557,7 +655,8 @@ begin
   begin
     if FDragging then
     begin
-      // 드래그 종료를 컨테이너에 확정 통지한다.
+      // 드롭 시점에 실제로 해당 위치로 이동시킨다.
+      FDragging := False;
       ScrollToPoint(AX, AY, True);
     end;
 
