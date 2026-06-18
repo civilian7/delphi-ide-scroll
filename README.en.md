@@ -53,6 +53,8 @@ See the [package build guide](docs/build-package.en.md) for detailed build/insta
 
 Once the package is installed, open a dockable minimap via **View menu → IDEScroll Minimap**. It is a ToolsAPI dockable form (`INTACustomDockableForm`), so you can dock/float it like any other IDE window.
 
+![The IDEScroll minimap docked in the RAD Studio IDE](docs/images/minimap.png)
+
 - Shows the form designer's **entire scroll surface** (with the form content) scaled down, and marks the **currently visible region** with a translucent highlight box.
 - **Drag and drop** the highlight box, or spin the **mouse wheel** (vertical) / **Ctrl+wheel** (horizontal) over the minimap, to scroll the designer to that position. Click outside the box to jump there instantly.
 - Updates automatically when you add/move/delete controls (driven by design notifications, debounced re-capture).
