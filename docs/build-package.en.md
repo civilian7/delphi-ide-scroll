@@ -11,7 +11,7 @@ How to build and install the IDE package (`IDEScrollPkg`). For the standalone EX
 ## Prerequisites
 
 - RAD Studio (Delphi 13 / Studio 37.0 used here; other versions work too)
-- The package only requires `rtl` and `vcl` — no extra components needed
+- The package requires `rtl`, `vcl`, and `designide` (all shipped with RAD Studio — no third-party components needed). `designide` is required for the minimap's ToolsAPI dockable form and theming.
 
 ## Option 1 — Command-line build (`build-bpl.cmd`)
 
@@ -41,7 +41,8 @@ For another RAD Studio version, edit the `STUDIO` path at the top of `build-bpl.
 1. IDE menu **Component → Install Packages → Add...**
 2. Select the built `IDEScrollPkg370.bpl` → **OK**
 3. Once installed, hooking is active immediately. In the form designer, use the **wheel** (vertical) / **Ctrl+wheel** (horizontal).
-4. To remove it, select the package on the same dialog and click **Remove**.
+4. Open the dockable minimap via **View menu → IDEScroll Minimap** (shows the form's position + drag/wheel scroll). See the [README](../README.en.md#minimap-ide-package-only) for details.
+5. To remove it, select the package on the same dialog and click **Remove**.
 
 ## Sensitivity settings
 
@@ -73,4 +74,4 @@ Because the `.bpl` differs per version, it is **not distributed as a release ass
 
 - **`F1026 File not found: '..\common\...'`** — you built outside the `.dpk` directory. `build-bpl.cmd` handles this with `pushd`, and opening it in the IDE resolves it automatically.
 - **Not installable / fails to load** — likely built for Win64. Rebuild for **Win32**.
-- **"does not contain any registered components" warning** — expected. This package registers no components; it only activates the hook on load.
+- **"does not contain any registered components" warning** — expected. This package registers no visual components; it only activates the hook and registers the View menu/dockable minimap on load.

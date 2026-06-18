@@ -37,7 +37,7 @@
 | 형태 | 설명 | 타깃 |
 |---|---|---|
 | **스탠드얼론 EXE** | 별도 실행 파일. 켜고 끄는 UI + 감도 설정 제공 | Win64 |
-| **IDE 패키지 (.bpl)** | IDE에 설치하면 자동으로 후킹. UI 없음 | Win32 (IDE가 32비트 프로세스) |
+| **IDE 패키지 (.bpl)** | IDE에 설치하면 자동 후킹 + **도킹형 미니맵** 제공 | Win32 (IDE가 32비트 프로세스) |
 
 > 패키지 버전의 감도는 `%APPDATA%\IDEScroll\IDEScroll.ini` 에서 조정합니다(첫 실행 시 기본값으로 생성).
 
@@ -48,6 +48,18 @@
 3. 설치 후 IDE 디자이너에서 휠 / Ctrl+휠 사용 (별도 실행 불필요)
 
 자세한 빌드·설치 절차는 [패키지 빌드 가이드](docs/build-package.md) 를 참고하세요.
+
+### 미니맵 (IDE 패키지 전용)
+
+IDE 패키지를 설치하면 **View 메뉴 → IDEScroll Minimap** 으로 도킹 가능한 미니맵 창을 열 수 있습니다. ToolsAPI 도킹 폼(`INTACustomDockableForm`)으로 구현되어 다른 IDE 창처럼 자유롭게 도킹/플로팅할 수 있습니다.
+
+- 폼 디자이너의 **전체 스크롤 영역**을 축소해 폼 콘텐츠와 함께 보여주고, **현재 보이는 영역**을 반투명 강조 박스로 표시합니다.
+- 강조 박스를 **드래그/드롭**하거나, 미니맵 위에서 **마우스 휠**(세로) / **Ctrl+휠**(가로)을 굴리면 디자이너가 그 위치로 스크롤됩니다. 박스 바깥을 클릭하면 그 지점으로 즉시 이동합니다.
+- 폼에서 컨트롤을 추가/이동/삭제하면 미니맵이 자동 갱신됩니다(디자인 알림 기반, 디바운스 재캡처).
+- **IDE 테마**(라이트/다크)에 맞춰 색이 적용됩니다.
+- 마지막 **도킹/플로팅 위치를 기억**해 다음에 같은 자리에 표시됩니다.
+
+> 미니맵은 패키지가 IDE 프로세스 안에서 동작하기에 가능한 기능으로, EXE 버전에는 제공되지 않습니다.
 
 ## 빌드
 
@@ -69,8 +81,14 @@ src/
     Main.pas / Main.dfm      UI (후킹 토글 + 감도 설정)
     IDEScroll.rc / .RES      리소스
   bpl/                       IDE 패키지 (Win32, Delphi 13)
-    IDEScrollPkg.dpk         design-time 패키지
-    IDEScroll.IdeHook.pas    로드 시 훅 자동 활성화
+    IDEScrollPkg.dpk         design-time 패키지 (requires: rtl, vcl, designide)
+    IDEScroll.IdeHook.pas    훅 자동 활성화 + View 메뉴/도킹 폼 등록
+    IDEScroll.DockForm.pas   ToolsAPI 도킹 폼 (INTACustomDockableForm)
+    IDEScroll.DockFrame.pas  미니맵 호스트 프레임 (+ .dfm)
+    IDEScroll.MinimapControl.pas      미니맵 컨트롤 (렌더 + 드래그/휠 스크롤)
+    IDEScroll.DesignerIntrospect.pas  디자이너/스크롤 조회 + 폼 캡처
+    IDEScroll.DesignNotifier.pas      디자인 변경 통지 → 미니맵 갱신
+    IDEScroll.Theming.pas    IDE 테마 색 + 변경 통지
 build.cmd                    EXE 빌드 (Win64)
 build-bpl.cmd                패키지 빌드 (Win32)
 ```
