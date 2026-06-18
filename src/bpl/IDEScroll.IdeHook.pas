@@ -9,6 +9,10 @@
 
 interface
 
+// 디자인 패키지 등록 진입점. IDE 가 호출하며, 여기서 도킹 폼을 등록해
+// 데스크톱 상태(마지막 도킹 위치)에 참여하도록 한다.
+procedure Register;
+
 implementation
 
 {$REGION 'uses'}
@@ -22,6 +26,7 @@ uses
   Vcl.Menus,
   ToolsAPI,
   IDEScroll.WheelHook,
+  IDEScroll.DockFrame,
   IDEScroll.DockForm;
 {$ENDREGION}
 
@@ -40,7 +45,6 @@ type
   // FForm 을 자동으로 nil 처리한다(이중 해제/댕글링 방지).
   TIDEScrollIntegration = class(TComponent)
   private
-    FDockableForm: INTACustomDockableForm;
     FForm: TCustomForm;
     FMenuItem: TMenuItem;
     function  FindParentMenu: TMenuItem;
@@ -55,6 +59,53 @@ type
 
 var
   GIntegration: TIDEScrollIntegration;
+  // 도킹 폼 명세는 등록(Register)과 표시(ShowDockForm)에서 동일 인스턴스를 공유해야
+  // IDE 가 데스크톱 복원 시 같은 폼으로 인식한다.
+  GDockableForm: INTACustomDockableForm;
+
+procedure EnsureDockableForm;
+begin
+  if GDockableForm = nil then
+  begin
+    GDockableForm := TIDEScrollDockableForm.Create;
+  end;
+end;
+
+// 이미 떠 있는 미니맵 도킹 폼(예: 데스크톱 복원으로 IDE 가 다시 만든 것)을 찾는다.
+function FindDockFormInstance: TCustomForm;
+var
+  LFormIndex: Integer;
+  LCompIndex: Integer;
+  LForm: TCustomForm;
+begin
+  Result := nil;
+
+  for LFormIndex := 0 to Screen.CustomFormCount - 1 do
+  begin
+    LForm := Screen.CustomForms[LFormIndex];
+    for LCompIndex := 0 to LForm.ComponentCount - 1 do
+    begin
+      if LForm.Components[LCompIndex] is TIDEScrollFrame then
+      begin
+        Result := LForm;
+        Exit;
+      end;
+    end;
+  end;
+end;
+
+procedure Register;
+var
+  LServices: INTAServices;
+begin
+  EnsureDockableForm;
+
+  // 패키지 등록 시점에 도킹 폼을 등록해야 IDE 시작 시 데스크톱 상태가 복원된다.
+  if Supports(BorlandIDEServices, INTAServices, LServices) then
+  begin
+    LServices.RegisterDockableForm(GDockableForm);
+  end;
+end;
 
 function ConfigFileName: string;
 var
@@ -128,8 +179,6 @@ begin
     FreeAndNil(FForm);
   end;
 
-  FDockableForm := nil;
-
   inherited Destroy;
 end;
 
@@ -192,23 +241,23 @@ begin
     Exit;
   end;
 
-  if FDockableForm = nil then
+  EnsureDockableForm;
+
+  if FForm = nil then
   begin
-    FDockableForm := TIDEScrollDockableForm.Create;
+    // 데스크톱 복원 등으로 IDE 가 이미 만들어 둔 인스턴스가 있으면 재사용한다.
+    FForm := FindDockFormInstance;
   end;
 
   if FForm = nil then
   begin
-    FForm := LServices.CreateDockableForm(FDockableForm);
-    if FForm <> nil then
-    begin
-      // 폼이 외부에서 해제되면 Notification 으로 FForm 을 nil 처리하도록 등록.
-      FForm.FreeNotification(Self);
-    end;
+    FForm := LServices.CreateDockableForm(GDockableForm);
   end;
 
   if FForm <> nil then
   begin
+    // 폼이 외부에서 해제되면 Notification 으로 FForm 을 nil 처리하도록 등록.
+    FForm.FreeNotification(Self);
     FForm.Show;
   end;
 end;
@@ -233,7 +282,17 @@ initialization
   end;
 
 finalization
+  // 등록한 도킹 폼을 해제 전에 먼저 등록 해제한다.
+  if GDockableForm <> nil then
+  begin
+    if Assigned(BorlandIDEServices) and Supports(BorlandIDEServices, INTAServices) then
+    begin
+      (BorlandIDEServices as INTAServices).UnregisterDockableForm(GDockableForm);
+    end;
+  end;
+
   FreeAndNil(GIntegration);
+  GDockableForm := nil;
   TWheelHook.Instance.Active := False;
 
 end.

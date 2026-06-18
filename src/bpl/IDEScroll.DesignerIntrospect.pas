@@ -16,6 +16,7 @@ uses
   Winapi.Messages,
   System.SysUtils,
   System.Classes,
+  System.Types,
   Vcl.Controls,
   Vcl.Graphics;
 {$ENDREGION}
@@ -34,6 +35,10 @@ function GetWindowCaption(const AWnd: HWND): string;
 
 // AWnd 의 ABar(SB_HORZ/SB_VERT) 스크롤 정보를 읽는다.
 procedure ReadScroll(const AWnd: HWND; const ABar: Integer; out APos: Integer; out APage: Integer; out AMin: Integer; out AMax: Integer);
+
+// 컨테이너에 현재 보이는 영역을 폼 클라이언트 좌표(픽셀)의 사각형으로 돌려준다.
+// ARect.Left/Top = 스크롤 오프셋, 크기 = 컨테이너 클라이언트 크기.
+function GetVisibleRegion(const AForm: HWND; const AContainer: HWND; out ARect: TRect): Boolean;
 
 // AWnd 의 ABar 스크롤을 APos 절대 위치로 이동시킨다.
 // AFinal=False 면 드래그 중 연속 스크롤(SB_THUMBTRACK), True 면 확정(SB_THUMBPOSITION + 종료).
@@ -192,6 +197,47 @@ begin
     AMin := LInfo.nMin;
     AMax := LInfo.nMax;
   end;
+end;
+
+function GetVisibleRegion(const AForm: HWND; const AContainer: HWND; out ARect: TRect): Boolean;
+var
+  LFormPt: TPoint;
+  LContPt: TPoint;
+  LContClient: TRect;
+begin
+  Result := False;
+  ARect := TRect.Empty;
+
+  if (AForm = 0) or (AContainer = 0) or not IsWindow(AForm) or not IsWindow(AContainer) then
+  begin
+    Exit;
+  end;
+
+  // 폼 클라이언트 (0,0) 과 컨테이너 클라이언트 (0,0) 의 화면 좌표 차이가 스크롤 오프셋.
+  LFormPt.X := 0;
+  LFormPt.Y := 0;
+  if not ClientToScreen(AForm, LFormPt) then
+  begin
+    Exit;
+  end;
+
+  LContPt.X := 0;
+  LContPt.Y := 0;
+  if not ClientToScreen(AContainer, LContPt) then
+  begin
+    Exit;
+  end;
+
+  if not GetClientRect(AContainer, LContClient) then
+  begin
+    Exit;
+  end;
+
+  ARect.Left := LContPt.X - LFormPt.X;
+  ARect.Top := LContPt.Y - LFormPt.Y;
+  ARect.Right := ARect.Left + (LContClient.Right - LContClient.Left);
+  ARect.Bottom := ARect.Top + (LContClient.Bottom - LContClient.Top);
+  Result := True;
 end;
 
 procedure ScrollWindowTo(const AWnd: HWND; const ABar: Integer; const APos: Integer; const AFinal: Boolean);

@@ -30,17 +30,11 @@ type
     FDragViewRect: TRect;
     FDrawRect: TRect;
     FFormCaption: string;
+    FFormHandle: HWND;
     FHasDesigner: Boolean;
-    FHMax: Integer;
-    FHMin: Integer;
-    FHPage: Integer;
-    FHPos: Integer;
     FLinkHover: Boolean;
     FLinkRect: TRect;
-    FVMax: Integer;
-    FVMin: Integer;
-    FVPage: Integer;
-    FVPos: Integer;
+    FView: TRect;
     function  ComputeDrawRect: TRect;
     function  DragTargetRect(const AX: Integer; const AY: Integer): TRect;
     function  ViewportRect(const ADrawRect: TRect): TRect;
@@ -72,6 +66,7 @@ implementation
 {$REGION 'uses'}
 uses
   Winapi.ShellAPI,
+  System.Math,
   IDEScroll.DesignerIntrospect,
   IDEScroll.Theming;
 {$ENDREGION}
@@ -161,8 +156,8 @@ function TIDEScrollMinimap.ViewportRect(const ADrawRect: TRect): TRect;
 var
   LDrawW: Integer;
   LDrawH: Integer;
-  LHRange: Integer;
-  LVRange: Integer;
+  LFormW: Integer;
+  LFormH: Integer;
   LLeftFrac: Double;
   LWidthFrac: Double;
   LTopFrac: Double;
@@ -172,36 +167,18 @@ begin
 
   LDrawW := ADrawRect.Right - ADrawRect.Left;
   LDrawH := ADrawRect.Bottom - ADrawRect.Top;
-  if (LDrawW <= 0) or (LDrawH <= 0) then
+  LFormW := FBitmap.Width;
+  LFormH := FBitmap.Height;
+  if (LDrawW <= 0) or (LDrawH <= 0) or (LFormW <= 0) or (LFormH <= 0) then
   begin
     Exit;
   end;
 
-  // 가로 방향 분율 계산.
-  LHRange := FHMax - FHMin + 1;
-  if (LHRange <= 0) or (FHPage <= 0) or (FHPage >= LHRange) then
-  begin
-    LLeftFrac := 0;
-    LWidthFrac := 1;
-  end
-  else
-  begin
-    LLeftFrac := (FHPos - FHMin) / LHRange;
-    LWidthFrac := FHPage / LHRange;
-  end;
-
-  // 세로 방향 분율 계산.
-  LVRange := FVMax - FVMin + 1;
-  if (LVRange <= 0) or (FVPage <= 0) or (FVPage >= LVRange) then
-  begin
-    LTopFrac := 0;
-    LHeightFrac := 1;
-  end
-  else
-  begin
-    LTopFrac := (FVPos - FVMin) / LVRange;
-    LHeightFrac := FVPage / LVRange;
-  end;
+  // 가시영역(폼 픽셀)을 분율로 환산. 폼이 전부 보이면 분율은 1 이 된다.
+  LWidthFrac := Min(1.0, (FView.Right - FView.Left) / LFormW);
+  LHeightFrac := Min(1.0, (FView.Bottom - FView.Top) / LFormH);
+  LLeftFrac := Min(Max(0.0, FView.Left / LFormW), 1.0 - LWidthFrac);
+  LTopFrac := Min(Max(0.0, FView.Top / LFormH), 1.0 - LHeightFrac);
 
   Result.Left := ADrawRect.Left + Round(LLeftFrac * LDrawW);
   Result.Top := ADrawRect.Top + Round(LTopFrac * LDrawH);
@@ -213,10 +190,10 @@ function TIDEScrollMinimap.DragTargetRect(const AX: Integer; const AY: Integer):
 var
   LDrawW: Integer;
   LDrawH: Integer;
+  LFormW: Integer;
+  LFormH: Integer;
   LCenterFracX: Double;
   LCenterFracY: Double;
-  LHRange: Integer;
-  LVRange: Integer;
   LWidthFrac: Double;
   LHeightFrac: Double;
   LLeftFrac: Double;
@@ -230,56 +207,20 @@ begin
 
   LDrawW := FDrawRect.Right - FDrawRect.Left;
   LDrawH := FDrawRect.Bottom - FDrawRect.Top;
-  if (LDrawW <= 0) or (LDrawH <= 0) then
+  LFormW := FBitmap.Width;
+  LFormH := FBitmap.Height;
+  if (LDrawW <= 0) or (LDrawH <= 0) or (LFormW <= 0) or (LFormH <= 0) then
   begin
     Exit;
   end;
 
   // 커서를 뷰포트 중심으로 두는 위치를 계산한다.
+  LWidthFrac := Min(1.0, (FView.Right - FView.Left) / LFormW);
+  LHeightFrac := Min(1.0, (FView.Bottom - FView.Top) / LFormH);
   LCenterFracX := (AX - FDrawRect.Left) / LDrawW;
   LCenterFracY := (AY - FDrawRect.Top) / LDrawH;
-
-  LHRange := FHMax - FHMin + 1;
-  if (LHRange > 0) and (FHPage > 0) and (FHPage < LHRange) then
-  begin
-    LWidthFrac := FHPage / LHRange;
-  end
-  else
-  begin
-    LWidthFrac := 1;
-  end;
-
-  LLeftFrac := LCenterFracX - LWidthFrac / 2;
-  if LLeftFrac < 0 then
-  begin
-    LLeftFrac := 0;
-  end;
-
-  if LLeftFrac > 1 - LWidthFrac then
-  begin
-    LLeftFrac := 1 - LWidthFrac;
-  end;
-
-  LVRange := FVMax - FVMin + 1;
-  if (LVRange > 0) and (FVPage > 0) and (FVPage < LVRange) then
-  begin
-    LHeightFrac := FVPage / LVRange;
-  end
-  else
-  begin
-    LHeightFrac := 1;
-  end;
-
-  LTopFrac := LCenterFracY - LHeightFrac / 2;
-  if LTopFrac < 0 then
-  begin
-    LTopFrac := 0;
-  end;
-
-  if LTopFrac > 1 - LHeightFrac then
-  begin
-    LTopFrac := 1 - LHeightFrac;
-  end;
+  LLeftFrac := Min(Max(0.0, LCenterFracX - LWidthFrac / 2), 1.0 - LWidthFrac);
+  LTopFrac := Min(Max(0.0, LCenterFracY - LHeightFrac / 2), 1.0 - LHeightFrac);
 
   Result.Left := FDrawRect.Left + Round(LLeftFrac * LDrawW);
   Result.Top := FDrawRect.Top + Round(LTopFrac * LDrawH);
@@ -480,15 +421,18 @@ begin
   begin
     FHasDesigner := False;
     FContainer := 0;
+    FFormHandle := 0;
     FFormCaption := '';
+    FView := TRect.Empty;
     Invalidate;
     Exit;
   end;
 
-  FContainer := FindScrollContainer(LForm.Handle);
-  FFormCaption := GetWindowCaption(LForm.Handle);
+  FFormHandle := LForm.Handle;
+  FContainer := FindScrollContainer(FFormHandle);
+  FFormCaption := GetWindowCaption(FFormHandle);
 
-  if not CaptureWindowImage(LForm.Handle, FBitmap) then
+  if not CaptureWindowImage(FFormHandle, FBitmap) then
   begin
     // 캡처 실패 시 직전 비트맵을 유지하되 디자이너 자체는 존재로 간주.
     FHasDesigner := FBitmap.Width > 0;
@@ -500,8 +444,7 @@ begin
 
   if FContainer <> 0 then
   begin
-    ReadScroll(FContainer, SB_HORZ, FHPos, FHPage, FHMin, FHMax);
-    ReadScroll(FContainer, SB_VERT, FVPos, FVPage, FVMin, FVMax);
+    GetVisibleRegion(FFormHandle, FContainer, FView);
   end;
 
   Invalidate;
@@ -509,67 +452,48 @@ end;
 
 procedure TIDEScrollMinimap.RefreshViewport;
 var
-  LHPos: Integer;
-  LHPage: Integer;
-  LHMin: Integer;
-  LHMax: Integer;
-  LVPos: Integer;
-  LVPage: Integer;
-  LVMin: Integer;
-  LVMax: Integer;
+  LNew: TRect;
 begin
   if (not FHasDesigner) or (FContainer = 0) then
   begin
     Exit;
   end;
 
-  ReadScroll(FContainer, SB_HORZ, LHPos, LHPage, LHMin, LHMax);
-  ReadScroll(FContainer, SB_VERT, LVPos, LVPage, LVMin, LVMax);
-
-  if (LHPos = FHPos) and (LHPage = FHPage) and (LHMin = FHMin) and (LHMax = FHMax) and
-     (LVPos = FVPos) and (LVPage = FVPage) and (LVMin = FVMin) and (LVMax = FVMax) then
+  if not GetVisibleRegion(FFormHandle, FContainer, LNew) then
   begin
     Exit;
   end;
 
-  FHPos := LHPos;
-  FHPage := LHPage;
-  FHMin := LHMin;
-  FHMax := LHMax;
-  FVPos := LVPos;
-  FVPage := LVPage;
-  FVMin := LVMin;
-  FVMax := LVMax;
-
-  Invalidate;
+  if LNew <> FView then
+  begin
+    FView := LNew;
+    Invalidate;
+  end;
 end;
 
 procedure TIDEScrollMinimap.SyncScrollFromContainer;
 begin
-  // 실제 컨테이너 스크롤 위치를 다시 읽어 뷰포트 표시를 동기화한다.
+  // 실제 컨테이너 가시영역을 다시 읽어 뷰포트 표시를 동기화한다.
   if FContainer = 0 then
   begin
     Exit;
   end;
 
-  ReadScroll(FContainer, SB_HORZ, FHPos, FHPage, FHMin, FHMax);
-  ReadScroll(FContainer, SB_VERT, FVPos, FVPage, FVMin, FVMax);
+  GetVisibleRegion(FFormHandle, FContainer, FView);
 end;
 
 procedure TIDEScrollMinimap.ScrollToPoint(const AX: Integer; const AY: Integer; const AFinal: Boolean);
 var
   LDrawW: Integer;
   LDrawH: Integer;
+  LFormW: Integer;
+  LFormH: Integer;
+  LViewW: Integer;
+  LViewH: Integer;
   LCenterFracX: Double;
   LCenterFracY: Double;
-  LHRange: Integer;
-  LVRange: Integer;
-  LWidthFrac: Double;
-  LHeightFrac: Double;
-  LLeftFrac: Double;
-  LTopFrac: Double;
-  LNewHPos: Integer;
-  LNewVPos: Integer;
+  LTargetX: Integer;
+  LTargetY: Integer;
 begin
   if (FContainer = 0) or FDrawRect.IsEmpty then
   begin
@@ -578,51 +502,32 @@ begin
 
   LDrawW := FDrawRect.Right - FDrawRect.Left;
   LDrawH := FDrawRect.Bottom - FDrawRect.Top;
-  if (LDrawW <= 0) or (LDrawH <= 0) then
+  LFormW := FBitmap.Width;
+  LFormH := FBitmap.Height;
+  if (LDrawW <= 0) or (LDrawH <= 0) or (LFormW <= 0) or (LFormH <= 0) then
   begin
     Exit;
   end;
 
-  // 커서가 가리키는 지점을 뷰포트 중심으로 삼는다.
+  LViewW := FView.Right - FView.Left;
+  LViewH := FView.Bottom - FView.Top;
+
+  // 커서가 가리키는 지점을 가시영역의 중심으로 삼아 스크롤 오프셋(픽셀)을 구한다.
   LCenterFracX := (AX - FDrawRect.Left) / LDrawW;
   LCenterFracY := (AY - FDrawRect.Top) / LDrawH;
 
-  LHRange := FHMax - FHMin + 1;
-  if (LHRange > 0) and (FHPage > 0) and (FHPage < LHRange) then
+  // 폼이 가로로 넘칠 때만 가로 스크롤.
+  if LFormW > LViewW then
   begin
-    LWidthFrac := FHPage / LHRange;
-    LLeftFrac := LCenterFracX - LWidthFrac / 2;
-    if LLeftFrac < 0 then
-    begin
-      LLeftFrac := 0;
-    end;
-
-    if LLeftFrac > 1 - LWidthFrac then
-    begin
-      LLeftFrac := 1 - LWidthFrac;
-    end;
-
-    LNewHPos := FHMin + Round(LLeftFrac * LHRange);
-    ScrollWindowTo(FContainer, SB_HORZ, LNewHPos, AFinal);
+    LTargetX := EnsureRange(Round(LCenterFracX * LFormW - LViewW / 2), 0, LFormW - LViewW);
+    ScrollWindowTo(FContainer, SB_HORZ, LTargetX, AFinal);
   end;
 
-  LVRange := FVMax - FVMin + 1;
-  if (LVRange > 0) and (FVPage > 0) and (FVPage < LVRange) then
+  // 폼이 세로로 넘칠 때만 세로 스크롤.
+  if LFormH > LViewH then
   begin
-    LHeightFrac := FVPage / LVRange;
-    LTopFrac := LCenterFracY - LHeightFrac / 2;
-    if LTopFrac < 0 then
-    begin
-      LTopFrac := 0;
-    end;
-
-    if LTopFrac > 1 - LHeightFrac then
-    begin
-      LTopFrac := 1 - LHeightFrac;
-    end;
-
-    LNewVPos := FVMin + Round(LTopFrac * LVRange);
-    ScrollWindowTo(FContainer, SB_VERT, LNewVPos, AFinal);
+    LTargetY := EnsureRange(Round(LCenterFracY * LFormH - LViewH / 2), 0, LFormH - LViewH);
+    ScrollWindowTo(FContainer, SB_VERT, LTargetY, AFinal);
   end;
 
   // 컨테이너가 실제로 이동한 위치를 다시 읽어 표시가 튀지 않게 한다.
